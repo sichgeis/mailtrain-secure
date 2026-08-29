@@ -33,7 +33,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 | Stage | Status | Objective |
 | --- | --- | --- |
 | 1. Test and CI foundation | Complete; draft PR review pending | Node 24-compatible layered test harness, dual-database CI, Playwright smoke coverage, deterministic installs, and preserved artifacts. |
-| 2. Authorization boundaries | Pending | Enforce share-role ceilings and global-role assignment authority. |
+| 2. Authorization boundaries | Complete; draft PR review pending | Enforce share-role ceilings and global-role assignment authority. |
 | 3. Immediate deployment and report safety | Pending | Remove default credentials/direct exposure and disable unsafe reports by default. |
 | 4. Webhook and request boundaries | Pending | Authenticate provider events and bound multipart/body processing. |
 | 5. Outbound network and filesystem controls | Pending | Centralize safe outbound fetching and close Mosaico traversal. |
@@ -48,6 +48,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 - Test harness: [#1](https://github.com/sichgeis/mailtrain-secure/issues/1)
 - Test/CI foundation draft: [PR #18](https://github.com/sichgeis/mailtrain-secure/pull/18)
 - Authorization escalation: [#2](https://github.com/sichgeis/mailtrain-secure/issues/2)
+- Authorization-boundaries draft: [PR #23](https://github.com/sichgeis/mailtrain-secure/pull/23)
 - Default credential and backend exposure: [#3](https://github.com/sichgeis/mailtrain-secure/issues/3)
 - Unsafe reports: [#4](https://github.com/sichgeis/mailtrain-secure/issues/4)
 - Webhook authenticity and AWS SSRF: [#5](https://github.com/sichgeis/mailtrain-secure/issues/5)
@@ -84,6 +85,9 @@ For every implementation stage: add or harden the relevant test first, implement
 - Synthetic MySQL 8 initialization and Knex migration pass locally, validating 67 tables. The authoritative CI matrix passes on MariaDB 10.11 and MySQL 8.4.
 - Playwright smoke passes a real synthetic-admin login, subscription rendering, and trusted/sandbox/public origin separation against isolated local MySQL and Redis containers. It also caught and now covers successful login without a `next` query parameter.
 - GitHub Actions run [33274056364](https://github.com/sichgeis/mailtrain-secure/actions/runs/33274056364) is green at commit `cfa09074`: fast/build, MariaDB 10.11, MySQL 8.4, and Playwright all pass.
+- Authorization grants now require the requested entity permissions and every namespace descendant permission to be subsets of the grantor effective profile. Privilege-bearing global roles additionally require the explicit `manageGlobalRoles` permission; unprivileged local users and equal/weaker namespace roles remain supported.
+- The complete `campaignsAdmin -> child namespace master -> global master` chain, including global-master creation and update through a simulated legacy over-privileged share, is blocked on MariaDB and MySQL. The read-only role-grant audit inventories historic explicit shares and privileged global assignments without exposing PII or modifying rows.
+- GitHub Actions run [33275000741](https://github.com/sichgeis/mailtrain-secure/actions/runs/33275000741) is green at commit `5a8a8aff`: 12 fast/security tests, build, MariaDB 10.11 RBAC integration, MySQL 8.4 RBAC integration, and Playwright all pass.
 - The inherited full-repository Grunt lint baseline has 796 pre-existing errors. Stage 1 therefore enforces a clean focused lint gate for the new harness while the broader lint modernization remains part of the runtime/dependency stage.
 - Production dependency audits remain deliberately non-blocking in Stage 1 and are retained as CI artifacts. The accepted critical/high baseline is tracked by issues #8 and #14; Stage 9 makes it a blocking release criterion.
 
@@ -93,4 +97,4 @@ None.
 
 ## Next Action
 
-Start Stage 2 from the green Stage 1 head: add exploit-chain and legitimate-sharing regression tests before enforcing role-grant ceilings and explicit global-role assignment authority.
+Start Stage 3 from the green Stage 2 head: add regression tests for startup without a supplied admin password, direct backend port publication, and report execution defaults before changing deployment and report behavior.
