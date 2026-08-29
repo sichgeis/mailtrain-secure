@@ -21,7 +21,6 @@ const {configureRateLimitStore, createRateLimitMiddleware, MemoryRateLimitStore,
 const {accountRateLimiters} = require('../../lib/request-rate-limiters');
 const {RestrictedTokenStore} = require('../../lib/restricted-token-store');
 const {buildSessionOptions, validateSessionSecurity} = require('../../lib/session-security');
-const webpackConfig = require('../../../client/webpack.config');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 
@@ -97,7 +96,8 @@ test('Docker session-secret validation rejects ephemeral or unsafe production in
 });
 
 test('production origins are distinct HTTPS origins and browser headers are role-specific', () => {
-    assert.equal(webpackConfig.devtool, false, 'browser bundles must not require unsafe-eval');
+    const webpackConfigSource = fs.readFileSync(path.join(repositoryRoot, 'client/webpack.config.js'), 'utf8');
+    assert.match(webpackConfigSource, /devtool:\s*false/, 'browser bundles must not require unsafe-eval');
 
     const origins = {
         trustedUrlBase: 'https://mail.example.test',
