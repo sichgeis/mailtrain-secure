@@ -117,6 +117,9 @@ jobs:
       - name: Clean server install
         working-directory: server
         run: npm ci
+      - name: Install shared runtime dependencies
+        working-directory: shared
+        run: npm ci --omit=dev
       - name: Initialize the synthetic legacy fixture
         working-directory: server
         run: npm run sqlinit
