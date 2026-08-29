@@ -95,23 +95,22 @@ async function createConfig() {
 
                 // set to true to start in TLS mode if using port 465
                 // this probably does not work as TLS support with 465 in ZoneMTA is a bit buggy
-                secure: false,
+                secure: false
             }
         },
 
         plugins: {
-            "core/email-bounce": false,
-            "core/http-bounce": {
-                enabled: "main",
-                url: `${config.www.trustedUrlBase}/webhooks/zone-mta`
-            },
-            "core/default-headers": {
-                enabled: ["receiver", "main", "sender"],
+            'core/email-bounce': false,
+            'core/http-bounce': false,
+            'core/default-headers': {
+                enabled: ['receiver', 'main', 'sender'],
                 futureDate: false,
                 xOriginatingIP: false
             },
             'mailtrain-main': {
-                enabled: ['main']
+                enabled: ['main'],
+                bounceUrl: `http://127.0.0.1:${config.www.trustedPort}/webhooks/zone-mta`,
+                bounceToken: getPassword()
             },
             'mailtrain-receiver': {
                 enabled: ['receiver'],
@@ -122,8 +121,8 @@ async function createConfig() {
 
         pools: {
             default: {
-              address: '0.0.0.0',
-              name: config.builtinZoneMTA.poolName || os.hostname()
+                address: '0.0.0.0',
+                name: config.builtinZoneMTA.poolName || os.hostname()
             }
         },
 

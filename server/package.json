@@ -15,7 +15,7 @@
     "starttest": "NODE_ENV=test node index.js",
     "_e2e": "NODE_ENV=test node test/e2e/index.js",
     "e2e": "npm run test:playwright",
-    "lint:harness": "eslint lib/admin-bootstrap.js lib/report-execution-policy.js lib/test-database-safety.js setup/security/*.js setup/validate-admin-password.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
+    "lint:harness": "eslint lib/admin-bootstrap.js lib/mailgun-upload.js lib/report-execution-policy.js lib/test-database-safety.js lib/webhook-security.js setup/security/*.js setup/validate-admin-password.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
     "test": "npm run test:fast",
     "test:fast": "node --test test/harness/*.test.js test/security/*.test.js",
     "test:coverage": "c8 --reporter=text --reporter=lcov npm run test:fast",

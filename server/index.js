@@ -43,6 +43,8 @@ async function startHTTPServer(appType, appName, port) {
     app.set('port', port);
 
     const server = http.createServer(app);
+    server.requestTimeout = config.security.requestTimeoutMs;
+    server.headersTimeout = config.security.headersTimeoutMs;
 
     server.on('error', err => {
         if (err.syscall !== 'listen') {
@@ -126,5 +128,4 @@ async function init() {
 }
 
 init().catch(err => {log.error('', err); process.exit(1); });
-
 

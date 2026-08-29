@@ -4,8 +4,10 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const {Readable} = require('node:stream');
 const test = require('node:test');
 const yaml = require('js-yaml');
+const {createMailgunUpload} = require('../../lib/mailgun-upload');
 const {
     ReplayCache,
     assertBasicAuthorization,
@@ -59,6 +61,12 @@ test('AWS SNS requires a valid signature, allowed topic, fresh timestamp, and on
     await assert.rejects(() => verifyAwsSnsMessage({...valid, MessageId: 'forged', Signature: valid.Signature}, {...options, replayCache: new ReplayCache()}), /signature/i);
     await assert.rejects(() => verifyAwsSnsMessage(createAwsMessage(privateKey, {TopicArn: 'arn:aws:sns:eu-central-1:123456789012:other'}), {...options, replayCache: new ReplayCache()}), /topic/i);
     await assert.rejects(() => verifyAwsSnsMessage(createAwsMessage(privateKey, {Timestamp: '2026-08-29T20:00:00.000Z'}), {...options, replayCache: new ReplayCache()}), /timestamp/i);
+    await assert.rejects(() => verifyAwsSnsMessage(createAwsMessage(privateKey, {SigningCertURL: 'https://169.254.169.254/certificate.pem'}), {
+        ...options,
+        replayCache: new ReplayCache(),
+        fetchCertificate: async () => assert.fail('private certificate URL must not be fetched')
+    }), /SigningCertURL/i);
+    await assert.rejects(() => verifyAwsSnsMessage(null, options), /type/i);
 });
 
 test('AWS confirmation permits only signed SNS HTTPS destinations and never follows redirects', async () => {
@@ -94,6 +102,37 @@ test('Mailgun HMAC rejects forged, stale, replayed, and unexpected multipart fie
     assert.throws(() => assertExpectedFields({event: 'bounced', attachment: 'unexpected'}, ['event', 'campaign_id', 'timestamp', 'token', 'signature']), /unexpected/i);
 });
 
+test('Mailgun multipart parsing rejects files, oversized fields, and excessive concurrent parts', async () => {
+    const boundary = 'mailtrain-security-test-boundary';
+    const upload = createMailgunUpload({maxFields: 5, maxFieldSize: 20});
+    const parse = parts => {
+        const chunks = parts.map(part => {
+            const filename = part.filename ? `; filename="${part.filename}"` : '';
+            const contentType = part.filename ? 'Content-Type: text/plain\r\n' : '';
+            return `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"${filename}\r\n${contentType}\r\n${part.value}\r\n`;
+        });
+        const body = Buffer.from(chunks.join('') + `--${boundary}--\r\n`);
+        const req = Readable.from([body]);
+        req.headers = {
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+            'content-length': String(body.length)
+        };
+        req.method = 'POST';
+        return new Promise(resolve => upload(req, {}, err => resolve({err, req})));
+    };
+
+    assert.equal((await parse([{name: 'event', value: 'bounced'}])).err, undefined);
+    assert.equal((await parse([{name: 'attachment', value: 'synthetic', filename: 'synthetic.txt'}])).err.status, 413);
+
+    const oversizedRequests = Array.from({length: 8}, (_, index) => parse([
+        {name: 'event', value: `oversized-${index}-${'x'.repeat(32)}`}
+    ]));
+    assert.deepEqual((await Promise.all(oversizedRequests)).map(result => result.err.status), Array(8).fill(413));
+
+    const excessiveParts = Array.from({length: 6}, (_, index) => ({name: `field-${index}`, value: 'value'}));
+    assert.equal((await parse(excessiveParts)).err.status, 413);
+});
+
 test('SparkPost Basic credentials use the Authorization header', () => {
     const expected = {username: 'synthetic-user', password: 'synthetic-password'};
     assert.doesNotThrow(() => assertBasicAuthorization(`Basic ${Buffer.from('synthetic-user:synthetic-password').toString('base64')}`, expected));
@@ -106,22 +145,26 @@ test('SendGrid verifies ECDSA over timestamp plus untouched request bytes', () =
     const rawBody = Buffer.from('[{"event":"bounce","campaign_id":"synthetic"}]');
     const timestamp = String(Math.floor(now / 1000));
     const signature = crypto.sign('sha256', Buffer.concat([Buffer.from(timestamp), rawBody]), privateKey).toString('base64');
-    const options = {publicKey, now: () => now};
+    const options = {publicKey, now: () => now, replayCache: new ReplayCache({now: () => now})};
 
     assert.doesNotThrow(() => verifySendGridSignature({rawBody, timestamp, signature}, options));
-    assert.throws(() => verifySendGridSignature({rawBody: Buffer.from('{}'), timestamp, signature}, options), /signature/i);
-    assert.throws(() => verifySendGridSignature({rawBody, timestamp: String(Number(timestamp) - 3600), signature}, options), /timestamp/i);
+    assert.throws(() => verifySendGridSignature({rawBody, timestamp, signature}, options), /replay/i);
+    assert.throws(() => verifySendGridSignature({rawBody: Buffer.from('{}'), timestamp, signature}, {...options, replayCache: new ReplayCache()}), /signature/i);
+    assert.throws(() => verifySendGridSignature({rawBody, timestamp: String(Number(timestamp) - 3600), signature}, {...options, replayCache: new ReplayCache()}), /timestamp/i);
 });
 
 test('Postal verifies the RSA-SHA256 body signature and configured key id', () => {
     const {privateKey, publicKey} = crypto.generateKeyPairSync('rsa', {modulusLength: 2048});
-    const rawBody = Buffer.from('{"event":"MessageBounced"}');
+    const timestamp = now / 1000;
+    const rawBody = Buffer.from(`{"event":"MessageBounced","timestamp":${timestamp}}`);
     const signature = crypto.sign('sha256', rawBody, privateKey).toString('base64');
-    const options = {publicKey, keyIds: ['synthetic-postal-key']};
+    const options = {publicKey, keyIds: ['synthetic-postal-key'], now: () => now, replayCache: new ReplayCache({now: () => now})};
 
-    assert.doesNotThrow(() => verifyPostalSignature({rawBody, signature, keyId: 'synthetic-postal-key'}, options));
-    assert.throws(() => verifyPostalSignature({rawBody, signature, keyId: 'other-key'}, options), /key id/i);
-    assert.throws(() => verifyPostalSignature({rawBody: Buffer.from('{}'), signature, keyId: 'synthetic-postal-key'}, options), /signature/i);
+    assert.doesNotThrow(() => verifyPostalSignature({rawBody, signature, keyId: 'synthetic-postal-key', timestamp}, options));
+    assert.throws(() => verifyPostalSignature({rawBody, signature, keyId: 'synthetic-postal-key', timestamp}, options), /replay/i);
+    assert.throws(() => verifyPostalSignature({rawBody, signature, keyId: 'other-key', timestamp}, {...options, replayCache: new ReplayCache()}), /key id/i);
+    assert.throws(() => verifyPostalSignature({rawBody: Buffer.from('{}'), signature, keyId: 'synthetic-postal-key', timestamp}, {...options, replayCache: new ReplayCache()}), /signature/i);
+    assert.throws(() => verifyPostalSignature({rawBody, signature, keyId: 'synthetic-postal-key', timestamp: timestamp - 3600}, {...options, replayCache: new ReplayCache()}), /timestamp/i);
 });
 
 test('ZoneMTA bounce and DKIM credentials are accepted only from headers', () => {
@@ -135,7 +178,7 @@ test('ZoneMTA bounce and DKIM credentials are accepted only from headers', () =>
 
     const builtinZoneMta = fs.readFileSync(path.join(repositoryRoot, 'server/lib/builtin-zone-mta.js'), 'utf8');
     const zoneMtaPlugin = fs.readFileSync(path.join(repositoryRoot, 'zone-mta/plugins/mailtrain-main.js'), 'utf8');
-    assert.match(builtinZoneMta, /"core\/http-bounce": false/);
+    assert.match(builtinZoneMta, /['"]core\/http-bounce['"]: false/);
     assert.match(builtinZoneMta, /bounceToken/);
     assert.match(zoneMtaPlugin, /Authorization/);
     assert.match(zoneMtaPlugin, /Bearer/);
@@ -144,10 +187,13 @@ test('ZoneMTA bounce and DKIM credentials are accepted only from headers', () =>
 test('body parsing and webhook defaults are bounded and fail closed', () => {
     const appBuilder = fs.readFileSync(path.join(repositoryRoot, 'server/app-builder.js'), 'utf8');
     const defaults = yaml.safeLoad(fs.readFileSync(path.join(repositoryRoot, 'server/config/default.yaml'), 'utf8'));
+    const proxy = yaml.safeLoad(fs.readFileSync(path.join(repositoryRoot, 'deploy/traefik/request-boundaries.yml'), 'utf8'));
 
     assert.match(appBuilder, /rawBody/);
     assert.equal(defaults.security.webhooks.aws.enabled, false);
     assert.equal(defaults.security.webhooks.mailgun.maxFieldSize > 0, true);
     assert.equal(defaults.security.webhooks.mailgun.maxFields > 0, true);
     assert.equal(defaults.security.requestTimeoutMs > 0, true);
+    assert.equal(proxy.http.middlewares['mailtrain-request-limit'].buffering.maxRequestBodyBytes, 2097152);
+    assert.equal(proxy.http.middlewares['mailtrain-mailgun-request-limit'].buffering.maxRequestBodyBytes, 65536);
 });

@@ -246,6 +246,8 @@ The production Compose file exposes Mailtrain's three HTTP ports only to its pri
 
 JavaScript reports are disabled by default. Enabling them requires both `WITH_REPORTS=true` and `REPORTS_UNSAFE_JAVASCRIPT=true`. This is an explicit unsafe compatibility mode: Node's `vm` module is not a security boundary, so only fully trusted report authors and database writers may use it.
 
+Provider webhook verification and request-limit migration is documented in [Webhook request boundaries](docs/security/webhook-request-boundaries.md).
+
 | Parameter        | Description |
 | ---------        | ----------- |
 | ADMIN_PASSWORD | required strong password used only to initialize the administrator on a fresh database; existing credentials are preserved |

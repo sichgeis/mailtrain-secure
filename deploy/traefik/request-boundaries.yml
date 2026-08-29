@@ -1,0 +1,10 @@
+http:
+  middlewares:
+    mailtrain-request-limit:
+      buffering:
+        maxRequestBodyBytes: 2097152
+        memRequestBodyBytes: 262144
+    mailtrain-mailgun-request-limit:
+      buffering:
+        maxRequestBodyBytes: 65536
+        memRequestBodyBytes: 65536

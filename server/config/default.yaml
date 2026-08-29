@@ -245,6 +245,38 @@ reports:
   # This second opt-in is intentionally required because Node vm does not isolate hostile JavaScript.
   unsafeJavaScriptExecution: false
 
+security:
+  # Maximum time an HTTP request may occupy a Mailtrain server connection.
+  requestTimeoutMs: 15000
+  headersTimeoutMs: 10000
+  webhooks:
+    maxClockSkewMs: 300000
+    replayCacheEntries: 10000
+    aws:
+      enabled: false
+      topicArns: []
+      certificateTimeoutMs: 5000
+      confirmationTimeoutMs: 5000
+    sparkpost:
+      enabled: false
+      username:
+      password:
+    sendgrid:
+      enabled: false
+      publicKey:
+    mailgun:
+      enabled: false
+      signingKey:
+      maxFields: 8
+      maxFieldSize: 8192
+    postal:
+      enabled: false
+      publicKey:
+      keyIds: []
+    zoneMta:
+      enabled: false
+      token:
+
 testServer:
   # Starts a vanity server that redirects all mail to /dev/null
   # Mostly needed for local development

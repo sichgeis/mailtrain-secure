@@ -68,6 +68,13 @@ const { AppType } = require('../shared/app');
 
 
 let isReady = false;
+function captureRawBody(req, res, buffer) {
+    const requestPath = req.originalUrl.split('?', 1)[0].replace(/\/$/, '');
+    if (requestPath === '/webhooks/sendgrid' || requestPath === '/webhooks/postal') {
+        req.rawBody = buffer;
+    }
+}
+
 function setReady() {
     isReady = true;
 }
@@ -201,15 +208,18 @@ async function createApp(appType) {
 
     app.use(bodyParser.urlencoded({
         extended: true,
-        limit: config.www.postSize
+        limit: config.www.postSize,
+        verify: captureRawBody
     }));
 
     app.use(bodyParser.text({
-        limit: config.www.postSize
+        limit: config.www.postSize,
+        verify: captureRawBody
     }));
 
     app.use(bodyParser.json({
-        limit: config.www.postSize
+        limit: config.www.postSize,
+        verify: captureRawBody
     }));
 
 
@@ -286,7 +296,9 @@ async function createApp(appType) {
 
     if (appType === AppType.TRUSTED || appType === AppType.SANDBOXED) {
         useWith404Fallback('/subscriptions', subscriptions);
-        useWith404Fallback('/webhooks', webhooks);
+        if (appType === AppType.TRUSTED) {
+            useWith404Fallback('/webhooks', webhooks);
+        }
 
         if (isReportExecutionEnabled(config.reports)) {
             useWith404Fallback('/rpts', reports); // This needs to be different from "reports", which is already used by the UI

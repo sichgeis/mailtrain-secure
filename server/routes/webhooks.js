@@ -8,20 +8,106 @@ const contextHelpers = require('../lib/context-helpers');
 const {CampaignMessageStatus} = require('../../shared/campaigns');
 const {MailerType} = require('../../shared/send-configurations');
 const log = require('../lib/log');
-const multer = require('multer');
-const uploads = multer();
+const config = require('../lib/config');
+const builtinZoneMta = require('../lib/builtin-zone-mta');
+const {createMailgunUpload, mailgunFields} = require('../lib/mailgun-upload');
+const {
+    ReplayCache,
+    assertBasicAuthorization,
+    assertBearerAuthorization,
+    assertExpectedFields,
+    confirmAwsSnsSubscription,
+    verifyAwsSnsMessage,
+    verifyMailgunSignature,
+    verifyPostalSignature,
+    verifySendGridSignature
+} = require('../lib/webhook-security');
+
+const webhookConfig = config.security.webhooks;
+const replayOptions = {maxEntries: webhookConfig.replayCacheEntries};
+const awsReplayCache = new ReplayCache(replayOptions);
+const sparkpostReplayCache = new ReplayCache(replayOptions);
+const sendgridReplayCache = new ReplayCache(replayOptions);
+const mailgunReplayCache = new ReplayCache(replayOptions);
+const postalReplayCache = new ReplayCache(replayOptions);
+const zoneMtaReplayCache = new ReplayCache(replayOptions);
+const awsCertificates = new Map();
+const mailgunUpload = createMailgunUpload(webhookConfig.mailgun);
+
+function assertProviderEnabled(provider) {
+    if (!provider || provider.enabled !== true) {
+        const error = new Error('Webhook provider is disabled');
+        error.status = 404;
+        throw error;
+    }
+}
+
+function requireProvider(provider) {
+    return (req, res, next) => {
+        try {
+            assertProviderEnabled(provider);
+            next();
+        } catch (err) {
+            next(err);
+        }
+    };
+}
+
+function parseJsonBody(body) {
+    if (typeof body !== 'string') {
+        return body;
+    }
+    try {
+        return JSON.parse(body);
+    } catch (err) {
+        err.status = 400;
+        throw err;
+    }
+}
+
+async function fetchAwsCertificate(uri) {
+    if (awsCertificates.has(uri)) {
+        return awsCertificates.get(uri);
+    }
+    const certificate = await request({
+        uri,
+        method: 'GET',
+        timeout: webhookConfig.aws.certificateTimeoutMs,
+        followRedirect: false,
+        simple: true
+    });
+    if (Buffer.byteLength(certificate) > 65536) {
+        const error = new Error('AWS SNS signing certificate is oversized');
+        error.status = 400;
+        throw error;
+    }
+    if (awsCertificates.size >= 8) {
+        awsCertificates.delete(awsCertificates.keys().next().value);
+    }
+    awsCertificates.set(uri, certificate);
+    return certificate;
+}
 
 
 router.postAsync('/aws', async (req, res) => {
-    if (typeof req.body === 'string') {
-        req.body = JSON.parse(req.body);
-    }
+    assertProviderEnabled(webhookConfig.aws);
+    req.body = parseJsonBody(req.body);
+
+    await verifyAwsSnsMessage(req.body, {
+        topicArns: webhookConfig.aws.topicArns,
+        maxClockSkewMs: webhookConfig.maxClockSkewMs,
+        replayCache: awsReplayCache,
+        fetchCertificate: fetchAwsCertificate
+    });
 
     switch (req.body.Type) {
 
         case 'SubscriptionConfirmation':
             if (req.body.SubscribeURL) {
-                await request(req.body.SubscribeURL);
+                await confirmAwsSnsSubscription(req.body, {
+                    request,
+                    timeout: webhookConfig.aws.confirmationTimeoutMs
+                });
                 break;
             } else {
                 const err = new Error('SubscribeURL not set');
@@ -31,29 +117,25 @@ router.postAsync('/aws', async (req, res) => {
 
         case 'Notification':
             if (req.body.Message) {
-                if (typeof req.body.Message === 'string') {
-                    req.body.Message = JSON.parse(req.body.Message);
-                }
+                req.body.Message = parseJsonBody(req.body.Message);
 
                 if (req.body.Message.mail && req.body.Message.mail.messageId) {
                     const message = await campaigns.getMessageByResponseId(req.body.Message.mail.messageId);
 
-                    if (!message) {
-                        return;
-                    }
+                    if (message) {
+                        switch (req.body.Message.notificationType) {
+                            case 'Bounce':
+                                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.Message.bounce.bounceType === 'Permanent');
+                                log.verbose('AWS', 'Marked message %s as bounced', req.body.Message.mail.messageId);
+                                break;
 
-                    switch (req.body.Message.notificationType) {
-                        case 'Bounce':
-                            await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.Message.bounce.bounceType === 'Permanent');
-                            log.verbose('AWS', 'Marked message %s as bounced', req.body.Message.mail.messageId);
-                            break;
-
-                        case 'Complaint':
-                            if (req.body.Message.complaint) {
-                                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                                log.verbose('AWS', 'Marked message %s as complaint', req.body.Message.mail.messageId);
-                            }
-                            break;
+                            case 'Complaint':
+                                if (req.body.Message.complaint) {
+                                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
+                                    log.verbose('AWS', 'Marked message %s as complaint', req.body.Message.mail.messageId);
+                                }
+                                break;
+                        }
                     }
                 }
             }
@@ -67,11 +149,18 @@ router.postAsync('/aws', async (req, res) => {
 
 
 router.postAsync('/sparkpost', async (req, res) => {
+    assertProviderEnabled(webhookConfig.sparkpost);
+    assertBasicAuthorization(req.get('authorization'), webhookConfig.sparkpost);
+    const batchId = req.get('x-messagesystems-batch-id');
+    if (!batchId) {
+        const error = new Error('SparkPost batch id is missing');
+        error.status = 400;
+        throw error;
+    }
+    sparkpostReplayCache.assertUnused(`sparkpost:${batchId}`, webhookConfig.maxClockSkewMs);
     const events = [].concat(req.body || []); // This is just a cryptic way getting an array regardless whether req.body is empty, one item, or array
 
     for (const curEvent of events) {
-        console.log(curEvent);
-
         let msys = curEvent && curEvent.msys;
         let evt;
 
@@ -116,6 +205,16 @@ router.postAsync('/sparkpost', async (req, res) => {
 
 
 router.postAsync('/sendgrid', async (req, res) => {
+    assertProviderEnabled(webhookConfig.sendgrid);
+    verifySendGridSignature({
+        rawBody: req.rawBody,
+        timestamp: req.get('x-twilio-email-event-webhook-timestamp'),
+        signature: req.get('x-twilio-email-event-webhook-signature')
+    }, {
+        publicKey: webhookConfig.sendgrid.publicKey,
+        maxClockSkewMs: webhookConfig.maxClockSkewMs,
+        replayCache: sendgridReplayCache
+    });
     let events = [].concat(req.body || []);
 
     for (const evt of events) {
@@ -123,7 +222,6 @@ router.postAsync('/sendgrid', async (req, res) => {
             continue;
         }
 
-        console.log(evt);
         log.verbose('Sendgrid', 'Received issue "%s" for message id "%s"', evt.event, evt.campaign_id);
 
         const message = await campaigns.getMessageByCid(evt.campaign_id);
@@ -157,10 +255,15 @@ router.postAsync('/sendgrid', async (req, res) => {
 });
 
 
-router.postAsync('/mailgun', uploads.any(), async (req, res) => {
+router.postAsync('/mailgun', requireProvider(webhookConfig.mailgun), mailgunUpload, async (req, res) => {
+    assertExpectedFields(req.body, mailgunFields);
+    verifyMailgunSignature(req.body, {
+        signingKey: webhookConfig.mailgun.signingKey,
+        maxClockSkewMs: webhookConfig.maxClockSkewMs,
+        replayCache: mailgunReplayCache
+    });
     const evt = req.body;
 
-    console.log(evt);
     log.verbose('Mailgun', 'Received issue "%s" for message id "%s"', evt.event, evt.campaign_id);
 
     const message = await campaigns.getMessageByCid([].concat(evt && evt.campaign_id || []).shift());
@@ -190,44 +293,38 @@ router.postAsync('/mailgun', uploads.any(), async (req, res) => {
 
 
 router.postAsync('/zone-mta', async (req, res) => {
-    try {
-        if (typeof req.body === 'string') {
-            req.body = JSON.parse(req.body);
-        }
-
-        if (req.body.id) {
-            const message = await campaigns.getMessageByResponseId(req.body.id);
-
-            if (message) {
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                log.verbose('ZoneMTA', 'Marked message (campaign:%s, list:%s, subscription:%s) as bounced', message.campaign, message.list, message.subscription);
-            }
-        }
-
-        res.json({
-            success: true
-        });
-    } catch (err) {
-        console.log(err);
-        throw err;
+    const zoneMtaToken = webhookConfig.zoneMta.token || (config.builtinZoneMTA.enabled ? builtinZoneMta.getPassword() : null);
+    if (!config.builtinZoneMTA.enabled) {
+        assertProviderEnabled(webhookConfig.zoneMta);
     }
+    assertBearerAuthorization(req.get('authorization'), zoneMtaToken);
+    req.body = parseJsonBody(req.body);
+
+    if (req.body.id) {
+        zoneMtaReplayCache.assertUnused(`zone-mta:${req.body.id}`, webhookConfig.maxClockSkewMs);
+        const message = await campaigns.getMessageByResponseId(req.body.id);
+
+        if (message) {
+            await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
+            log.verbose('ZoneMTA', 'Marked message (campaign:%s, list:%s, subscription:%s) as bounced', message.campaign, message.list, message.subscription);
+        }
+    }
+
+    res.json({
+        success: true
+    });
 });
 
 
 router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', async (req, res) => {
-    if (!req.query.api_token) {
-        return res.json({
-            error: 'api_token value not set'
-        });
-    }
-
     const sendConfiguration = await sendConfigurations.getByCid(contextHelpers.getAdminContext(), req.params.sendConfigurationCid, false, true);
 
-    if (sendConfiguration.mailer_type !== MailerType.ZONE_MTA || sendConfiguration.mailer_settings.dkimApiKey !== req.query.api_token) {
-        return res.json({
-            error: 'invalid api_token value'
-        });
+    if (sendConfiguration.mailer_type !== MailerType.ZONE_MTA) {
+        const error = new Error('Invalid ZoneMTA send configuration');
+        error.status = 404;
+        throw error;
     }
+    assertBearerAuthorization(req.get('authorization'), sendConfiguration.mailer_settings.dkimApiKey);
 
     const dkimDomain = sendConfiguration.mailer_settings.dkimDomain;
     const dkimSelector = (sendConfiguration.mailer_settings.dkimSelector || '').trim();
@@ -254,10 +351,19 @@ router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', async (req, re
 
 
 router.postAsync('/postal', async (req, res) => {
-
-    if (typeof req.body === 'string') {
-        req.body = JSON.parse(req.body);
-    }
+    assertProviderEnabled(webhookConfig.postal);
+    req.body = parseJsonBody(req.body);
+    verifyPostalSignature({
+        rawBody: req.rawBody,
+        signature: req.get('x-postal-signature-256'),
+        keyId: req.get('x-postal-signature-kid'),
+        timestamp: req.body.timestamp
+    }, {
+        publicKey: webhookConfig.postal.publicKey,
+        keyIds: webhookConfig.postal.keyIds,
+        maxClockSkewMs: webhookConfig.maxClockSkewMs,
+        replayCache: postalReplayCache
+    });
 
     switch (req.body.event) {
 
