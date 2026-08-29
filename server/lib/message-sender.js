@@ -17,7 +17,7 @@ const {toNameTagLangauge} = require('../../shared/lists');
 const {CampaignMessageStatus, CampaignMessageErrorType} = require('../../shared/campaigns');
 const tools = require('./tools');
 const htmlToText = require('html-to-text');
-const request = require('request-promise');
+const {fetch: outboundFetch} = require('./outbound-fetch');
 const files = require('../models/files');
 const {getPublicUrl} = require('./urls');
 const blacklist = require('../models/blacklist');
@@ -212,18 +212,21 @@ class MessageSender {
 
             let response;
             try {
-                response = await request.post({
-                    uri: sourceUrl,
+                response = await outboundFetch(sourceUrl, {
+                    method: 'POST',
                     form,
-                    resolveWithFullResponse: true
+                    sensitiveData: true,
+                    headers: {
+                        accept: 'text/html,application/xhtml+xml'
+                    }
                 });
             } catch (exc) {
-                log.error('MessageSender', `Error pulling content from URL (${sourceUrl})`);
+                log.error('MessageSender', 'Error pulling campaign content from its configured URL');
                 response = {statusCode: exc.message};
             }
 
             if (response.statusCode !== 200) {
-                const statusError = new Error(`Received status code ${response.statusCode} from ${sourceUrl}`);
+                const statusError = new Error(`Received status code ${response.statusCode} from the configured campaign URL`);
                 if (response.statusCode >= 500) {
                     statusError.campaignMessageErrorType = CampaignMessageErrorType.PERMANENT;
                 } else {

@@ -2,8 +2,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const {EventEmitter} = require('node:events');
 const test = require('node:test');
 const {
     createOutboundFetcher,
@@ -29,7 +31,9 @@ test('public-address policy rejects private, loopback, link-local, ULA, multicas
         '0.0.0.0', '10.0.0.1', '100.64.0.1', '127.0.0.1', '169.254.169.254',
         '172.16.0.1', '192.168.0.1', '224.0.0.1', '::', '::1', '::ffff:127.0.0.1',
         'fc00::1', 'fd00::1', 'fe80::1', 'ff00::1'
-    ]) assert.equal(isPublicAddress(address), false, address);
+    ]) {
+        assert.equal(isPublicAddress(address), false, address);
+    }
 
     assert.equal(isPublicAddress('93.184.216.34'), true);
     assert.equal(isPublicAddress('2606:4700:4700::1111'), true);
@@ -50,6 +54,60 @@ test('outbound fetch pins a validated public address and permits only HTTP(S) po
     await assert.rejects(() => fetch('http://example.com:8080/'), /port/i);
     await assert.rejects(() => fetch('file:///etc/passwd'), /protocol/i);
     await assert.rejects(() => fetch('http://127.0.0.1/'), /public/i);
+    await assert.rejects(() => fetch('http://2130706433/'), /public/i);
+    await assert.rejects(() => fetch('http://0x7f000001/'), /public/i);
+    await assert.rejects(() => fetch('http://[::1]/'), /public/i);
+});
+
+test('native pinned transport supports Node 24 lookup shape, response resets, and absolute deadlines', async t => {
+    const originalRequest = http.request;
+    let mode = 'ok';
+    http.request = (options, onResponse) => {
+        const request = new EventEmitter();
+        request.write = () => {};
+        request.destroy = error => {
+            clearInterval(request.slowInterval);
+            if (request.response) {
+                request.response.emit('aborted');
+            }
+            queueMicrotask(() => request.emit('error', error));
+        };
+        request.end = () => options.lookup(options.hostname, {all: true}, (error, addresses) => {
+            assert.ifError(error);
+            assert.deepEqual(addresses, [{address: '93.184.216.34', family: 4}]);
+            const incoming = new EventEmitter();
+            incoming.statusCode = 200;
+            incoming.headers = {};
+            request.response = incoming;
+            onResponse(incoming);
+            if (mode === 'ok') {
+                incoming.emit('data', Buffer.from('native-ok'));
+                incoming.emit('end');
+                incoming.emit('close');
+            } else if (mode === 'reset') {
+                incoming.emit('data', Buffer.from('partial'));
+                incoming.emit('aborted');
+            } else {
+                request.slowInterval = setInterval(() => incoming.emit('data', Buffer.from('.')), 5);
+            }
+        });
+        return request;
+    };
+    t.after(() => {
+        http.request = originalRequest;
+    });
+
+    const fetch = createOutboundFetcher({...basePolicy, timeoutMs: 40}, {
+        resolveHostname: async () => [{address: '93.184.216.34', family: 4}]
+    });
+    assert.equal((await fetch('http://native.test/ok')).body, 'native-ok');
+    mode = 'reset';
+    await assert.rejects(() => fetch('http://native.test/reset'), /aborted|closed|reset/i);
+
+    mode = 'slow';
+    const startedAt = Date.now();
+    await assert.rejects(() => fetch('http://native.test/slow'), /timed out/i);
+    assert.ok(Date.now() - startedAt < 250, 'slow-drip response exceeded its absolute deadline');
 });
 
 test('every redirect and repeated DNS resolution is revalidated before a connection', async () => {
@@ -126,6 +184,10 @@ test('subscriber form data is transmitted only to an explicitly approved exact o
     });
     assert.match(calls[0].body.toString(), /subscriber%40example\.test/);
 
+    await assert.rejects(() => approved('http://renderer.example/campaign', {
+        method: 'POST', form: {EMAIL: 'subscriber@example.test'}, sensitiveData: true
+    }), /HTTPS/i);
+
     await assert.rejects(() => approved('https://renderer.example.evil.test/campaign', {
         method: 'POST', form: {EMAIL: 'subscriber@example.test'}, sensitiveData: true
     }), /subscriber data/i);
@@ -142,8 +204,10 @@ test('fixed-base path resolution rejects traversal encodings, absolute paths, an
     await fs.promises.writeFile(path.join(outside, 'secret.txt'), 'synthetic-secret');
     await fs.promises.symlink(path.join(outside, 'secret.txt'), path.join(base, 'escape'));
 
-    assert.equal(await resolvePathWithinBase(base, 'image.png'), path.join(base, 'image.png'));
+    assert.equal(await resolvePathWithinBase(base, 'image.png'), await fs.promises.realpath(path.join(base, 'image.png')));
     for (const unsafe of ['../secret.txt', '%2e%2e/secret.txt', '%252e%252e/secret.txt', '/etc/passwd', 'C:\\Windows\\win.ini', 'escape']) {
+        // Each candidate is independently resolved to exercise every encoding.
+        // eslint-disable-next-line no-await-in-loop
         await assert.rejects(() => resolvePathWithinBase(base, unsafe), /path/i, unsafe);
     }
 });
@@ -153,10 +217,15 @@ test('all campaign, RSS, AWS confirmation, preview, and legacy Mosaico boundarie
     const messageSender = fs.readFileSync(path.join(repositoryRoot, 'server/lib/message-sender.js'), 'utf8');
     const webhooks = fs.readFileSync(path.join(repositoryRoot, 'server/routes/webhooks.js'), 'utf8');
     const mosaico = fs.readFileSync(path.join(repositoryRoot, 'server/routes/sandboxed-mosaico.js'), 'utf8');
+    const imagePolicy = fs.readFileSync(path.join(repositoryRoot, 'server/config/imagemagick/policy.xml'), 'utf8');
+    const dockerfile = fs.readFileSync(path.join(repositoryRoot, 'Dockerfile'), 'utf8');
 
     assert.match(feedcheck, /outbound-fetch/);
     assert.match(messageSender, /outbound-fetch/);
     assert.match(webhooks, /outbound-fetch/);
     assert.match(mosaico, /safe-path/);
     assert.doesNotMatch(mosaico, /path\.join\([^\n]+mosaicoLegacyUrlPrefix/);
+    assert.match(imagePolicy, /domain="delegate" rights="none" pattern="\*"/);
+    assert.match(imagePolicy, /domain="coder" rights="read\|write" pattern="\{GIF,JPEG,JPG,PNG,WEBP\}"/);
+    assert.match(dockerfile, /MAGICK_CONFIGURE_PATH=\/app\/server\/config\/imagemagick/);
 });

@@ -6,6 +6,7 @@ const express = require('express');
 const routerFactory = require('../lib/router-async');
 const passport = require('../lib/passport');
 const clientHelpers = require('../lib/client-helpers');
+process.env.MAGICK_CONFIGURE_PATH = process.env.MAGICK_CONFIGURE_PATH || path.resolve(__dirname, '..', 'config', 'imagemagick');
 const gm = require('gm').subClass({
     imageMagick: true
 });
@@ -32,6 +33,9 @@ const { AppType } = require('../../shared/app');
 const {castToInteger} = require('../lib/helpers');
 
 const { fileCache } = require('../lib/file-cache');
+const {resolvePathWithinBase} = require('../lib/safe-path');
+
+const legacyMosaicoUploadsDir = path.resolve(__dirname, '..', '..', 'client', 'static', 'mosaico', 'uploads');
 
 
 users.registerRestrictedAccessTokenMethod('mosaico', async ({entityTypeId, entityId}) => {
@@ -270,9 +274,9 @@ async function getRouter(appType) {
                 let filePath;
                 const url = req.query.src || '';
 
-                const mosaicoLegacyUrlPrefix = getTrustedUrl(`mosaico/uploads/`);
+                const mosaicoLegacyUrlPrefix = getTrustedUrl('mosaico/uploads/');
                 if (url.startsWith(mosaicoLegacyUrlPrefix)) {
-                    filePath = path.join(__dirname, '..', '..', 'client', 'static' , 'mosaico', 'uploads', url.substring(mosaicoLegacyUrlPrefix.length));
+                    filePath = await resolvePathWithinBase(legacyMosaicoUploadsDir, url.substring(mosaicoLegacyUrlPrefix.length));
                 } else {
                     const file = await files.getFileByUrl(contextHelpers.getAdminContext(), url);
                     filePath = file.path;

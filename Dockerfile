@@ -35,6 +35,7 @@ RUN set -ex; \
 FROM node:10-alpine
 
 WORKDIR /app/
+ENV MAGICK_CONFIGURE_PATH=/app/server/config/imagemagick
 
 # Install system dependencies
 RUN set -ex; \

@@ -249,6 +249,13 @@ security:
   # Maximum time an HTTP request may occupy a Mailtrain server connection.
   requestTimeoutMs: 15000
   headersTimeoutMs: 10000
+  outbound:
+    allowedPorts: [80, 443]
+    maxRedirects: 3
+    timeoutMs: 10000
+    maxResponseSize: 1048576
+    # Exact origins allowed to receive per-subscriber campaign rendering fields.
+    allowedSubscriberDataOrigins: []
   webhooks:
     maxClockSkewMs: 300000
     replayCacheEntries: 10000

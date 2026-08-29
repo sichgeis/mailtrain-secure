@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('../lib/router-async').create();
-const request = require('request-promise');
+const {fetch: outboundFetch} = require('../lib/outbound-fetch');
 const campaigns = require('../models/campaigns');
 const sendConfigurations = require('../models/send-configurations');
 const contextHelpers = require('../lib/context-helpers');
@@ -69,13 +69,19 @@ async function fetchAwsCertificate(uri) {
     if (awsCertificates.has(uri)) {
         return awsCertificates.get(uri);
     }
-    const certificate = await request({
-        uri,
+    const response = await outboundFetch(uri, {
         method: 'GET',
-        timeout: webhookConfig.aws.certificateTimeoutMs,
-        followRedirect: false,
-        simple: true
+        timeoutMs: webhookConfig.aws.certificateTimeoutMs,
+        maxRedirects: 0,
+        maxResponseSize: 65536,
+        headers: {accept: 'application/x-pem-file,text/plain'}
     });
+    if (response.statusCode !== 200) {
+        const error = new Error('AWS SNS signing certificate request failed');
+        error.status = 400;
+        throw error;
+    }
+    const certificate = response.body;
     if (Buffer.byteLength(certificate) > 65536) {
         const error = new Error('AWS SNS signing certificate is oversized');
         error.status = 400;
@@ -105,7 +111,20 @@ router.postAsync('/aws', async (req, res) => {
         case 'SubscriptionConfirmation':
             if (req.body.SubscribeURL) {
                 await confirmAwsSnsSubscription(req.body, {
-                    request,
+                    request: async options => {
+                        const response = await outboundFetch(options.uri, {
+                            method: options.method,
+                            timeoutMs: options.timeout,
+                            maxRedirects: 0,
+                            maxResponseSize: 65536
+                        });
+                        if (response.statusCode < 200 || response.statusCode >= 300) {
+                            const error = new Error('AWS SNS subscription confirmation request failed');
+                            error.status = 400;
+                            throw error;
+                        }
+                        return response;
+                    },
                     timeout: webhookConfig.aws.confirmationTimeoutMs
                 });
                 break;

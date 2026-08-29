@@ -5,7 +5,9 @@ const log = require('./log');
 const path = require('path');
 const senders = require('./senders');
 const bluebird = require('bluebird');
-const feedparser = require('feedparser-promised');
+const FeedParser = require('feedparser');
+const {Readable} = require('stream');
+const {fetch: outboundFetch} = require('./outbound-fetch');
 const {getPublicUrl} = require('./urls');
 
 let messageTid = 0;
@@ -45,15 +47,16 @@ function scheduleCheck() {
 }
 
 async function fetch(url) {
-    const httpOptions = {
-        uri: url,
+    const response = await outboundFetch(url, {
         headers: {
             'user-agent': 'Mailtrain',
-            'accept': 'text/html,application/xhtml+xml'
+            accept: 'application/atom+xml,application/rss+xml,application/xml,text/xml'
         }
-    };
-
-    const items = await feedparser.parse(httpOptions);
+    });
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`RSS endpoint returned status ${response.statusCode}`);
+    }
+    const items = await parseFeed(response.body);
 
     const entries = [];
     for (const item of items) {
@@ -64,22 +67,38 @@ async function fetch(url) {
 
         const entry = {
             title: item.title,
-            date: date,
+            date,
             guid: item.guid || item.link,
             link: item.link,
             content: item.description || item.summary,
             summary: item.summary || item.description,
-            imageUrl: item.image.url,
+            imageUrl: item.image.url
         };
 
         if ('mt:entries-json' in item) {
-            entry.customTags = JSON.parse(item['mt:entries-json']['#'])
+            entry.customTags = JSON.parse(item['mt:entries-json']['#']);
         }
 
         entries.push(entry);
     }
 
     return entries;
+}
+
+function parseFeed(body) {
+    return new Promise((resolve, reject) => {
+        const items = [];
+        const parser = new FeedParser();
+        parser.on('readable', () => {
+            let item;
+            while ((item = parser.read())) {
+                items.push(item);
+            }
+        });
+        parser.once('error', reject);
+        parser.once('end', () => resolve(items));
+        Readable.from([body]).pipe(parser);
+    });
 }
 
 async function getEntryForPreview(url) {
