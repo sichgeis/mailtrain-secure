@@ -289,7 +289,7 @@ defaultRoles:
       name: Global Master
       admin: true
       description: All permissions
-      permissions: [rebuildPermissions, createJavascriptWithROAccess, displayManageUsers, manageBlacklist, manageSettings, setupAutomation]
+      permissions: [rebuildPermissions, createJavascriptWithROAccess, displayManageUsers, manageBlacklist, manageSettings, manageGlobalRoles, setupAutomation]
       rootNamespaceRole: master
     campaignsAdmin:
       name: Campaigns Admin
@@ -450,4 +450,3 @@ defaultRoles:
       name: Viewer
       description: The user can use the Mosaico template, but cannot edit it or delete it.
       permissions: [view, viewFiles]
-

@@ -15,12 +15,13 @@
     "starttest": "NODE_ENV=test node index.js",
     "_e2e": "NODE_ENV=test node test/e2e/index.js",
     "e2e": "npm run test:playwright",
-    "lint:harness": "eslint lib/test-database-safety.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
+    "lint:harness": "eslint lib/test-database-safety.js setup/security/*.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
     "test": "npm run test:fast",
     "test:fast": "node --test test/harness/*.test.js test/security/*.test.js",
     "test:coverage": "c8 --reporter=text --reporter=lcov npm run test:fast",
     "test:integration": "NODE_ENV=test node test/integration/schema-smoke.js && NODE_ENV=test node test/integration/rbac-boundaries.js",
-    "test:playwright": "playwright test --config test/playwright/playwright.config.js"
+    "test:playwright": "playwright test --config test/playwright/playwright.config.js",
+    "security:audit-role-grants": "node setup/security/audit-role-grants.js"
   },
   "repository": {
     "type": "git",

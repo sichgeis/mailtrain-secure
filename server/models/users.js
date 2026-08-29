@@ -168,6 +168,7 @@ async function create(context, user) {
     let id;
     await knex.transaction(async tx => {
         await shares.enforceEntityPermissionTx(tx, context, 'namespace', user.namespace, 'manageUsers');
+        await shares.enforceGlobalRoleAssignmentTx(tx, context, user.namespace, user.role);
 
         if (passport.isAuthMethodLocal) {
             await _validateAndPreprocess(tx, user, true);
@@ -206,6 +207,10 @@ async function updateWithConsistencyCheck(context, user, isOwnAccount) {
         if (!isOwnAccount) {
             await shares.enforceEntityPermissionTx(tx, context, 'namespace', user.namespace, 'manageUsers');
             await shares.enforceEntityPermissionTx(tx, context, 'namespace', existing.namespace, 'manageUsers');
+
+            if (existing.namespace !== user.namespace || existing.role !== user.role) {
+                await shares.enforceGlobalRoleAssignmentTx(tx, context, user.namespace, user.role);
+            }
         }
 
         if (passport.isAuthMethodLocal) {

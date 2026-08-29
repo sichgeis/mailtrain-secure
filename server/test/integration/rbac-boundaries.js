@@ -100,6 +100,14 @@ async function run() {
         });
         assert.ok(localUserId > 0);
 
+        const localUser = await users.getById(controlledContext, localUserId);
+        await expectPermissionDenied(() => users.updateWithConsistencyCheck(controlledContext, {
+            ...localUser,
+            password: '',
+            role: 'master',
+            originalHash: users.hash(localUser)
+        }, false));
+
         await shares.assign(controlledContext, 'namespace', childNamespaceId, localUserId, 'campaignsViewer');
         const assignedRole = await knex('shares_namespace')
             .where({user: localUserId, entity: childNamespaceId, auto: false})
@@ -113,7 +121,10 @@ async function run() {
     }
 }
 
-run().catch(err => {
+run().then(() => {
+    // Loading the user model starts inherited background handles; the isolated test has completed and cleaned up its database pool.
+    process.exit(0);
+}).catch(err => {
     process.stderr.write(`${err.stack || err}\n`);
-    process.exitCode = 1;
+    process.exit(1);
 });
