@@ -238,19 +238,12 @@ grapesjs:
       label: MJML Template
 
 reports:
-  # The whole reporting functionality can be disabled below if the they are not needed and the DB cannot be
-  # properly protected.
-  # Reports rely on custom user defined Javascript snippets defined in the report template. The snippets are run on the
-  # server when generating a report. As these snippets are stored in the DB, they pose a security risk because they can
-  # help gaining access to the server if the DB cannot
-  # be properly protected (e.g. if it is shared with another application with security weaknesses).
-  # Mailtrain mitigates this problem by running the custom Javascript snippets in a chrooted environment and under a
-  # DB user that cannot modify the database (see userRO in [mysql] above). However the chrooted environment is available
-  # only if Mailtrain is started as root. The chrooted environment still does not prevent the custom JS script in
-  # performing network operations and in generating XSS attacks as part of the report.
-  # The bottom line is that if people who are creating report templates or have write access to the DB cannot be trusted,
-  # then it's safer to switch off the reporting functionality below.
-  enabled: true
+  # Report templates contain database-stored JavaScript that executes on the server. Node vm and the legacy worker
+  # controls are not security boundaries. Leave reports disabled unless every report author and database writer is
+  # fully trusted and the deployment explicitly accepts code-execution, network, and output-content risk.
+  enabled: false
+  # This second opt-in is intentionally required because Node vm does not isolate hostile JavaScript.
+  unsafeJavaScriptExecution: false
 
 testServer:
   # Starts a vanity server that redirects all mail to /dev/null

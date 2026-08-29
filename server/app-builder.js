@@ -16,6 +16,7 @@ const hbs = require('hbs');
 const compression = require('compression');
 const passport = require('./lib/passport');
 const contextHelpers = require('./lib/context-helpers');
+const {isReportExecutionEnabled} = require('./lib/report-execution-policy');
 
 const api = require('./routes/api');
 
@@ -287,7 +288,7 @@ async function createApp(appType) {
         useWith404Fallback('/subscriptions', subscriptions);
         useWith404Fallback('/webhooks', webhooks);
 
-        if (config.reports && config.reports.enabled === true) {
+        if (isReportExecutionEnabled(config.reports)) {
             useWith404Fallback('/rpts', reports); // This needs to be different from "reports", which is already used by the UI
         }
 
@@ -319,7 +320,7 @@ async function createApp(appType) {
         app.use('/rest', filesRest);
         app.use('/rest', settingsRest);
 
-        if (config.reports && config.reports.enabled === true) {
+        if (isReportExecutionEnabled(config.reports)) {
             app.use('/rest', reportTemplatesRest);
             app.use('/rest', reportsRest);
         }

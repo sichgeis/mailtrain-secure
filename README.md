@@ -238,12 +238,18 @@ Alternatively, you can just declare them there leaving their value empty
 value can be provided via a file called `.env` or via environment 
 variables (e.g. `URL_BASE_TRUSTED=https://mailtrain.domain.com (and more env-vars..) docker-compose -f docker-compose.yml build (or up)`)  
 
-#### !!!WARNING!!! Always set ADMIN_PASSWORD, as it will leave your instance otherwise vurnerable with the default password being `test`!
+#### Required Docker security settings
+
+`ADMIN_PASSWORD` has no default and must be supplied externally. Startup fails when it is missing or does not meet Mailtrain's password-strength policy. The value initializes a fresh database only; restarting the container never overwrites an administrator password that was changed in Mailtrain. Keep this value out of Compose files, source control, command-line arguments, and logs.
+
+The production Compose file exposes Mailtrain's three HTTP ports only to its private Docker networks. Connect a reverse proxy to those networks instead of publishing the backend ports on the host. The hardened Traefik topology is delivered separately.
+
+JavaScript reports are disabled by default. Enabling them requires both `WITH_REPORTS=true` and `REPORTS_UNSAFE_JAVASCRIPT=true`. This is an explicit unsafe compatibility mode: Node's `vm` module is not a security boundary, so only fully trusted report authors and database writers may use it.
 
 | Parameter        | Description |
 | ---------        | ----------- |
-| ADMIN_PASSWORD | sets Admin Password, Admin users name can be changed, but password will always be overwritten by this, please set it always, as it otherwise defaults to `test` |
-| ADMIN_ACCESS_TOKEN | sets Access Token for API, this is optional |
+| ADMIN_PASSWORD | required strong password used only to initialize the administrator on a fresh database; existing credentials are preserved |
+| ADMIN_ACCESS_TOKEN | optional access token used only during fresh-database initialization |
 | PORT_TRUSTED     | sets the trusted port of the instance (default: 3000)                 |
 | PORT_SANDBOX     | sets the sandbox port of the instance (default: 3003)                 |
 | PORT_PUBLIC      | sets the public port of the instance (default: 3004)                  |
@@ -281,6 +287,8 @@ variables (e.g. `URL_BASE_TRUSTED=https://mailtrain.domain.com (and more env-var
 | CAS_NEWUSERNAMESPACEID | The namespace id of new users (default: 1)                      |
 | LOG_LEVEL        | sets log level among `silly|verbose|info|http|warn|error|silent` (default: `info`) |
 | DEFAULT_LANGUAGE | sets default language (default: en-US) |
+| WITH_REPORTS | enables report routes and processing only when the unsafe JavaScript opt-in is also enabled (default: false) |
+| REPORTS_UNSAFE_JAVASCRIPT | acknowledges that report JavaScript is not sandboxed and explicitly opts in (default: false) |
 | WITH_POSTFIXBOUNCE | enables PostfixBounce TCP listener (default: false) |
 | POSTFIXBOUNCE_PORT | sets PostfixBounce Listening TCP-Port (default: 5699) |
 | POSTFIXBOUNCE_HOST | sets PostfixBounce Listening Host (default: 127.0.0.1) |

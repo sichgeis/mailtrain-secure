@@ -44,8 +44,10 @@ MYSQL_PASSWORD=${MYSQL_PASSWORD:-'mailtrain'}
 WITH_ZONE_MTA=${WITH_ZONE_MTA:-'true'}
 POOL_NAME=${POOL_NAME:-$(hostname)}
 LOG_LEVEL=${LOG_LEVEL:-'info'}
-ADMIN_PASSWORD=${ADMIN_PASSWORD:-'test'}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-''}
 ADMIN_ACCESS_TOKEN=${ADMIN_ACCESS_TOKEN:-''}
+WITH_REPORTS=${WITH_REPORTS:-'false'}
+REPORTS_UNSAFE_JAVASCRIPT=${REPORTS_UNSAFE_JAVASCRIPT:-'false'}
 DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-'en-US'}
 WITH_POSTFIXBOUNCE=${WITH_POSTFIXBOUNCE:-'false'}
 POSTFIXBOUNCE_PORT=${POSTFIXBOUNCE_PORT:-'5699'}
@@ -58,6 +60,9 @@ if [ ! -z "$MAILTRAIN_SETTING" ]; then
     echo 'Error: MAILTRAIN_SETTINGS is no longer supported. See README.md'
     exit 1
 fi
+
+export ADMIN_PASSWORD ADMIN_ACCESS_TOKEN
+NODE_ENV=production node server/setup/validate-admin-password.js
 
 if [ -f server/config/production.yaml ]; then
     echo 'Info: application/production.yaml already provisioned'
@@ -104,6 +109,10 @@ log:
   level: $LOG_LEVEL
 
 defaultLanguage: $DEFAULT_LANGUAGE
+
+reports:
+  enabled: $WITH_REPORTS
+  unsafeJavaScriptExecution: $REPORTS_UNSAFE_JAVASCRIPT
 
 EOT
 
@@ -218,6 +227,6 @@ if [ "$WITH_LDAP" = "true" ]; then
   fi
 fi
 
-NODE_ENV=production node setup/docker-entrypoint-db-setup.js "$ADMIN_PASSWORD" "$ADMIN_ACCESS_TOKEN"
+NODE_ENV=production node setup/docker-entrypoint-db-setup.js
 
 NODE_ENV=production node index.js

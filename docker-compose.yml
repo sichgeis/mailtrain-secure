@@ -23,10 +23,13 @@ services:
 
   mailtrain:
     image: mailtrain/mailtrain:latest
-    ports:
-    - "3000:3000"
-    - "3003:3003"
-    - "3004:3004"
+    environment:
+    - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in the environment}
+    - ADMIN_ACCESS_TOKEN=${ADMIN_ACCESS_TOKEN:-}
+    expose:
+    - "3000"
+    - "3003"
+    - "3004"
     volumes:
     - mailtrain-files:/app/server/files
 
@@ -35,4 +38,3 @@ volumes:
   redis-data:
   mongo-data:
   mailtrain-files:
-
