@@ -34,6 +34,9 @@ jobs:
       - name: Install server dependencies deterministically
         working-directory: server
         run: npm ci
+      - name: Install shared runtime dependencies
+        working-directory: shared
+        run: npm ci --omit=dev
       - name: Run fast unit and security tests with coverage
         working-directory: server
         run: |
@@ -43,9 +46,6 @@ jobs:
       - name: Install client dependencies deterministically
         working-directory: client
         run: npm ci
-      - name: Install shared runtime dependencies
-        working-directory: shared
-        run: npm ci --omit=dev
       - name: Build browser assets
         working-directory: client
         run: npm run build
