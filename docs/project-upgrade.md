@@ -34,7 +34,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 | --- | --- | --- |
 | 1. Test and CI foundation | Complete; draft PR review pending | Node 24-compatible layered test harness, dual-database CI, Playwright smoke coverage, deterministic installs, and preserved artifacts. |
 | 2. Authorization boundaries | Complete; draft PR review pending | Enforce share-role ceilings and global-role assignment authority. |
-| 3. Immediate deployment and report safety | Pending | Remove default credentials/direct exposure and disable unsafe reports by default. |
+| 3. Immediate deployment and report safety | Complete; draft PR review pending | Remove default credentials/direct exposure and disable unsafe reports by default. |
 | 4. Webhook and request boundaries | Pending | Authenticate provider events and bound multipart/body processing. |
 | 5. Outbound network and filesystem controls | Pending | Centralize safe outbound fetching and close Mosaico traversal. |
 | 6. Authentication, browser, logging, and abuse controls | Pending | Header tokens, hardened sessions, CSP/origins, XSS controls, throttling, and redaction. |
@@ -51,6 +51,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 - Authorization-boundaries draft: [PR #23](https://github.com/sichgeis/mailtrain-secure/pull/23)
 - Default credential and backend exposure: [#3](https://github.com/sichgeis/mailtrain-secure/issues/3)
 - Unsafe reports: [#4](https://github.com/sichgeis/mailtrain-secure/issues/4)
+- Immediate deployment and report-safety draft: [PR #24](https://github.com/sichgeis/mailtrain-secure/pull/24)
 - Webhook authenticity and AWS SSRF: [#5](https://github.com/sichgeis/mailtrain-secure/issues/5)
 - Multipart exhaustion: [#6](https://github.com/sichgeis/mailtrain-secure/issues/6)
 - Campaign/RSS outbound SSRF: [#7](https://github.com/sichgeis/mailtrain-secure/issues/7)
@@ -88,6 +89,10 @@ For every implementation stage: add or harden the relevant test first, implement
 - Authorization grants now require the requested entity permissions and every namespace descendant permission to be subsets of the grantor effective profile. Privilege-bearing global roles additionally require the explicit `manageGlobalRoles` permission; unprivileged local users and equal/weaker namespace roles remain supported.
 - The complete `campaignsAdmin -> child namespace master -> global master` chain, including global-master creation and update through a simulated legacy over-privileged share, is blocked on MariaDB and MySQL. The read-only role-grant audit inventories historic explicit shares and privileged global assignments without exposing PII or modifying rows.
 - GitHub Actions run [33275000741](https://github.com/sichgeis/mailtrain-secure/actions/runs/33275000741) is green at commit `5a8a8aff`: 12 fast/security tests, build, MariaDB 10.11 RBAC integration, MySQL 8.4 RBAC integration, and Playwright all pass.
+- Docker startup now requires an externally supplied strong administrator bootstrap password, passes it through the process environment instead of command-line arguments, and applies it only when the administrator did not exist before initialization. Existing administrator password and API-token changes are preserved across restarts.
+- The production Compose baseline no longer publishes Mailtrain ports 3000, 3003, or 3004 on the host. It exposes them only to the private Compose network for a reverse proxy to consume.
+- Database-stored JavaScript reports, their routes, client navigation, scheduler, and processor remain disabled unless both report flags are explicitly enabled. Unsafe compatibility mode emits a high-visibility warning that Node vm is not a security boundary.
+- GitHub Actions run [33275597917](https://github.com/sichgeis/mailtrain-secure/actions/runs/33275597917) is green at commit `68153b3d`: 19 Node 24 fast/security tests, focused lint, coverage, client build, MariaDB 10.11 integration, MySQL 8.4 integration, and Playwright all pass.
 - The inherited full-repository Grunt lint baseline has 796 pre-existing errors. Stage 1 therefore enforces a clean focused lint gate for the new harness while the broader lint modernization remains part of the runtime/dependency stage.
 - Production dependency audits remain deliberately non-blocking in Stage 1 and are retained as CI artifacts. The accepted critical/high baseline is tracked by issues #8 and #14; Stage 9 makes it a blocking release criterion.
 
@@ -97,4 +102,4 @@ None.
 
 ## Next Action
 
-Start Stage 3 from the green Stage 2 head: add regression tests for startup without a supplied admin password, direct backend port publication, and report execution defaults before changing deployment and report behavior.
+Start Stage 4 from the green Stage 3 head: characterize provider webhook authentication, AWS SNS confirmation behavior, ZoneMTA/DKIM credentials, multipart limits, and request timeouts before changing request-boundary behavior.
