@@ -32,7 +32,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 
 | Stage | Status | Objective |
 | --- | --- | --- |
-| 1. Test and CI foundation | In progress | Node 24-compatible layered test harness, dual-database CI, Playwright smoke coverage, deterministic installs, and preserved artifacts. |
+| 1. Test and CI foundation | Complete; draft PR review pending | Node 24-compatible layered test harness, dual-database CI, Playwright smoke coverage, deterministic installs, and preserved artifacts. |
 | 2. Authorization boundaries | Pending | Enforce share-role ceilings and global-role assignment authority. |
 | 3. Immediate deployment and report safety | Pending | Remove default credentials/direct exposure and disable unsafe reports by default. |
 | 4. Webhook and request boundaries | Pending | Authenticate provider events and bound multipart/body processing. |
@@ -46,6 +46,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 
 - Umbrella tracker: [#17](https://github.com/sichgeis/mailtrain-secure/issues/17)
 - Test harness: [#1](https://github.com/sichgeis/mailtrain-secure/issues/1)
+- Test/CI foundation draft: [PR #18](https://github.com/sichgeis/mailtrain-secure/pull/18)
 - Authorization escalation: [#2](https://github.com/sichgeis/mailtrain-secure/issues/2)
 - Default credential and backend exposure: [#3](https://github.com/sichgeis/mailtrain-secure/issues/3)
 - Unsafe reports: [#4](https://github.com/sichgeis/mailtrain-secure/issues/4)
@@ -69,6 +70,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 - Outbound requests default to public HTTP/HTTPS on ports 80/443 and revalidate resolved addresses after redirects.
 - The legacy toolchain may not install or build on Node 24. Stage 1 may update build/test-only dependencies needed to establish the harness; broader production dependency changes remain Stage 9.
 - GitHub personal-plan restrictions may prevent some repository rules or security features. Unavailable controls must be recorded rather than silently omitted.
+- GitHub dependency alerts and automated security-update proposals are enabled. Secret scanning and `v2` branch protection are unavailable for this private repository on the current personal plan (GitHub API responses `422` and `403` respectively); no repository visibility or CI requirement was weakened as a workaround.
 
 ## Stage Loop
 
@@ -79,8 +81,9 @@ For every implementation stage: add or harden the relevant test first, implement
 - Baseline `npm ci --ignore-scripts` failed because the inherited lockfile v1 was inconsistent (`compressjs` and `elliptic` resolutions). All application lockfiles are now npm lockfile v3 generated with Node 24.6.0/npm 11.5.1.
 - Node 24 fast/security suite: 9 passing tests. Coverage is 100% for the destructive-database guard; the worker environment allowlist is also exercised.
 - Node 24 client clean install and build pass with Dart Sass and an explicit SHA-256 Webpack build hash. Remaining Sass deprecation warnings belong to the inherited CoreUI/Bootstrap styles and are tracked for Stage 9.
-- Synthetic MySQL 8 initialization and Knex migration pass locally, validating 67 tables. MariaDB 10.11 and MySQL 8.4 remain required CI matrix checks.
-- Playwright smoke passes login, subscription rendering, and trusted/sandbox/public origin separation against isolated local MySQL and Redis containers.
+- Synthetic MySQL 8 initialization and Knex migration pass locally, validating 67 tables. The authoritative CI matrix passes on MariaDB 10.11 and MySQL 8.4.
+- Playwright smoke passes a real synthetic-admin login, subscription rendering, and trusted/sandbox/public origin separation against isolated local MySQL and Redis containers. It also caught and now covers successful login without a `next` query parameter.
+- GitHub Actions run [33274056364](https://github.com/sichgeis/mailtrain-secure/actions/runs/33274056364) is green at commit `cfa09074`: fast/build, MariaDB 10.11, MySQL 8.4, and Playwright all pass.
 - The inherited full-repository Grunt lint baseline has 796 pre-existing errors. Stage 1 therefore enforces a clean focused lint gate for the new harness while the broader lint modernization remains part of the runtime/dependency stage.
 - Production dependency audits remain deliberately non-blocking in Stage 1 and are retained as CI artifacts. The accepted critical/high baseline is tracked by issues #8 and #14; Stage 9 makes it a blocking release criterion.
 
@@ -90,4 +93,4 @@ None.
 
 ## Next Action
 
-Push the Stage 1 implementation, run the GitHub CI matrix, and resolve every failing head check before marking issue #1 complete.
+Start Stage 2 from the green Stage 1 head: add exploit-chain and legitimate-sharing regression tests before enforcing role-grant ceilings and explicit global-role assignment authority.
