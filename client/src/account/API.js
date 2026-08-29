@@ -22,7 +22,8 @@ export default class API extends Component {
         super(props);
 
         this.state = {
-            accessToken: null
+            accessToken: null,
+            hasAccessToken: false
         };
     }
 
@@ -30,7 +31,8 @@ export default class API extends Component {
     async loadAccessToken() {
         const response = await axios.get(getUrl('rest/access-token'));
         this.setState({
-            accessToken: response.data
+            accessToken: null,
+            hasAccessToken: !!response.data.exists
         });
     }
 
@@ -42,7 +44,8 @@ export default class API extends Component {
     async resetAccessToken() {
         const response = await axios.post(getUrl('rest/access-token-reset'));
         this.setState({
-            accessToken: response.data
+            accessToken: response.data,
+            hasAccessToken: true
         });
     }
 
@@ -54,6 +57,8 @@ export default class API extends Component {
         let accessTokenMsg;
         if (this.state.accessToken) {
             accessTokenMsg = <div>{t('personalAccessToken') + ': '}<code>{accessToken}</code></div>;
+        } else if (this.state.hasAccessToken) {
+            accessTokenMsg = <div>{t('personalAccessToken') + ': '}{t('resetAccessToken')}</div>;
         } else {
             accessTokenMsg = <div>{t('accessTokenNotYetGenerated')}</div>;
         }
@@ -65,7 +70,7 @@ export default class API extends Component {
                 <div className="card mb-3">
                     <div className="card-body">
                         <div className="float-right">
-                            <Button label={this.state.accessToken ? t('resetAccessToken') : t('generateAccessToken')} icon="redo" className="btn-info" onClickAsync={::this.resetAccessToken} />
+                            <Button label={this.state.hasAccessToken ? t('resetAccessToken') : t('generateAccessToken')} icon="redo" className="btn-info" onClickAsync={::this.resetAccessToken} />
                         </div>
                         {accessTokenMsg}
                     </div>

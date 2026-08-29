@@ -32,6 +32,7 @@ const hashKeys = new Set(['username', 'name', 'email', 'namespace', 'role']);
 const shares = require('./shares');
 const contextHelpers = require('../lib/context-helpers');
 const {RestrictedTokenStore} = require('../lib/restricted-token-store');
+const {allowPlaintext, getStorage, lookupCandidates, lookupHash} = require('../lib/secret-storage');
 
 function hash(entity) {
     return hasher.hash(filterObject(entity, hashKeys));
@@ -260,6 +261,33 @@ async function remove(context, userId) {
 }
 
 async function getByAccessToken(accessToken) {
+    const storage = getStorage();
+    if (storage) {
+        return await knex.transaction(async tx => {
+            const candidates = lookupCandidates(accessToken, 'access-token');
+            const user = await tx('users').select(['id', 'username', 'name', 'email', 'namespace', 'role', 'access_token_key_id'])
+                .where(builder => {
+                    for (const candidate of candidates) {
+                        builder.orWhere({access_token_key_id: candidate.keyId, access_token_hash: candidate.hash});
+                    }
+                }).forUpdate().first();
+            if (!user) {
+                shares.throwPermissionDenied();
+            }
+            if (user.access_token_key_id !== storage.keyId) {
+                await tx('users').where({id: user.id}).update({
+                    access_token_hash: lookupHash(accessToken, 'access-token'),
+                    access_token_key_id: storage.keyId
+                });
+            }
+            await shares.enforceEntityPermissionTx(tx, contextHelpers.getAdminContext(), 'namespace', user.namespace, 'manageUsers');
+            delete user.access_token_key_id;
+            return user;
+        });
+    }
+    if (!allowPlaintext()) {
+        throw new Error('Plaintext access tokens are disabled');
+    }
     return await _getBy(contextHelpers.getAdminContext(), 'access_token', accessToken);
 }
 
@@ -293,30 +321,40 @@ async function getByUsernameIfPasswordMatch(context, username, password) {
 }
 
 async function getAccessToken(userId) {
-    const user = await _getBy(contextHelpers.getAdminContext(), 'id', userId, ['access_token']);
-    return user.access_token;
+    const user = await _getBy(contextHelpers.getAdminContext(), 'id', userId, ['access_token', 'access_token_hash']);
+    return {exists: !!(user.access_token_hash || user.access_token)};
 }
 
 async function resetAccessToken(userId) {
-    const token = crypto.randomBytes(20).toString('hex').toLowerCase();
-    await knex('users').where({id: userId}).update({access_token: token});
+    const token = crypto.randomBytes(32).toString('base64url');
+    getStorage({required: true});
+    const fields = {
+        access_token: null,
+        access_token_hash: lookupHash(token, 'access-token'),
+        access_token_key_id: getStorage({required: true}).keyId
+    };
+    await knex('users').where({id: userId}).update(fields);
     return token;
 }
 
 async function sendPasswordReset(locale, usernameOrEmail) {
     enforce(passport.isAuthMethodLocal, 'Local user management is required');
 
-    const resetToken = crypto.randomBytes(16).toString('base64').replace(/[^a-z0-9]/gi, '');
+    const resetToken = crypto.randomBytes(32).toString('base64url');
     let user;
 
     await knex.transaction(async tx => {
         user = await tx('users').where('username', usernameOrEmail).orWhere('email', usernameOrEmail).select(['id', 'username', 'email', 'name']).forUpdate().first();
 
         if (user) {
-            await tx('users').where('id', user.id).update({
-                reset_token: resetToken,
+            getStorage({required: true});
+            const resetFields = {
+                reset_token: null,
+                reset_token_hash: lookupHash(resetToken, 'reset-token'),
+                reset_token_key_id: getStorage({required: true}).keyId,
                 reset_expire: new Date(Date.now() + 60 * 60 * 1000)
-            });
+            };
+            await tx('users').where('id', user.id).update(resetFields);
         }
         // We intentionally silently ignore the situation when user is not found. This is not to reveal if a user exists in the system.
 
@@ -348,7 +386,18 @@ async function sendPasswordReset(locale, usernameOrEmail) {
 async function isPasswordResetTokenValid(username, resetToken) {
     enforce(passport.isAuthMethodLocal, 'Local user management is required');
 
-    const user = await knex('users').select(['id']).where({username, reset_token: resetToken}).andWhere('reset_expire', '>', new Date()).first();
+    let query = knex('users').select(['id']).where({username}).andWhere('reset_expire', '>', new Date());
+    if (getStorage()) {
+        const candidates = lookupCandidates(resetToken, 'reset-token');
+        query = query.andWhere(builder => {
+            for (const candidate of candidates) {
+                builder.orWhere({reset_token_key_id: candidate.keyId, reset_token_hash: candidate.hash});
+            }
+        });
+    } else {
+        query = query.andWhere({reset_token: resetToken});
+    }
+    const user = await query.first();
     return !!user;
 }
 
@@ -356,10 +405,18 @@ async function resetPassword(username, resetToken, password) {
     enforce(passport.isAuthMethodLocal, 'Local user management is required');
 
     await knex.transaction(async tx => {
-        const user = await tx('users').select(['id']).where({
-            username,
-            reset_token: resetToken
-        }).andWhere('reset_expire', '>', new Date()).first();
+        let query = tx('users').select(['id']).where({username}).andWhere('reset_expire', '>', new Date());
+        if (getStorage()) {
+            const candidates = lookupCandidates(resetToken, 'reset-token');
+            query = query.andWhere(builder => {
+                for (const candidate of candidates) {
+                    builder.orWhere({reset_token_key_id: candidate.keyId, reset_token_hash: candidate.hash});
+                }
+            });
+        } else {
+            query = query.andWhere({reset_token: resetToken});
+        }
+        const user = await query.forUpdate().first();
 
         if (user) {
             const passwordValidatorResults = passwordValidator.test(password);
@@ -373,6 +430,8 @@ async function resetPassword(username, resetToken, password) {
             await tx('users').where({username}).update({
                 password,
                 reset_token: null,
+                reset_token_hash: null,
+                reset_token_key_id: null,
                 reset_expire: null
             });
         } else {

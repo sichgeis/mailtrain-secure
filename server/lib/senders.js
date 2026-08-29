@@ -7,6 +7,7 @@ const knex = require('./knex');
 const {CampaignStatus} = require('../../shared/campaigns');
 const builtinZoneMta = require('./builtin-zone-mta');
 const bluebird = require('bluebird');
+const {secretProcessEnvironment} = require('./secret-storage');
 
 let messageTid = 0;
 let senderProcess;
@@ -21,7 +22,8 @@ function spawn(callback) {
             cwd: path.join(__dirname, '..'),
             env: {
                 NODE_ENV: process.env.NODE_ENV,
-                BUILTIN_ZONE_MTA_PASSWORD: builtinZoneMta.getPassword()
+                BUILTIN_ZONE_MTA_PASSWORD: builtinZoneMta.getPassword(),
+                ...secretProcessEnvironment()
             }
         });
 

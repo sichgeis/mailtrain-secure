@@ -29,6 +29,18 @@ async function run() {
             assert.ok(tableNames.has(requiredTable), `expected migrated table ${requiredTable}`);
         }
 
+        const columns = await query(`SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND ((TABLE_NAME = 'send_configurations' AND COLUMN_NAME = 'mailer_secrets')
+                OR (TABLE_NAME = 'settings' AND COLUMN_NAME = 'encrypted_value')
+                OR (TABLE_NAME = 'users' AND COLUMN_NAME IN ('access_token_hash', 'reset_token_hash')))`);
+        const columnTypes = new Map(columns.map(column => [`${column.TABLE_NAME}.${column.COLUMN_NAME}`, column.COLUMN_TYPE.toLowerCase()]));
+        assert.equal(columnTypes.get('send_configurations.mailer_secrets'), 'longtext');
+        assert.equal(columnTypes.get('settings.encrypted_value'), 'longtext');
+        assert.equal(columnTypes.get('users.access_token_hash'), 'binary(32)');
+        assert.equal(columnTypes.get('users.reset_token_hash'), 'binary(32)');
+
         process.stdout.write(`Validated ${tableNames.size} tables in synthetic database ${config.mysql.database}\n`);
     } finally {
         connection.destroy();

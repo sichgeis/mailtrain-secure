@@ -107,6 +107,8 @@ jobs:
     env:
       NODE_ENV: test
       NODE_CONFIG: '{"mysql":{"host":"127.0.0.1","user":"root","password":"synthetic-root-password","database":"mailtrain_ci_test","port":3306}}'
+      MAILTRAIN_MASTER_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY='
+      MAILTRAIN_MASTER_KEY_ID: synthetic-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -125,7 +127,16 @@ jobs:
         run: npm run sqlinit
       - name: Apply and verify migrations
         working-directory: server
-        run: npm run test:integration
+        run: |
+          npm run test:integration
+          node test/integration/secret-migration-smoke.js seed
+          npm run security:secrets -- dry-run
+          npm run security:secrets -- migrate
+          npm run security:secrets -- verify
+          node test/integration/secret-migration-smoke.js verify
+          npm run security:secrets -- migrate
+          npm run security:secrets -- verify
+          node test/integration/secret-migration-smoke.js verify
       - name: Preserve database diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4

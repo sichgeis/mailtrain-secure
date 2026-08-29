@@ -8,6 +8,7 @@ const bluebird = require('bluebird');
 const bcrypt = require('bcrypt-nodejs');
 const bcryptHash = bluebird.promisify(bcrypt.hash.bind(bcrypt));
 const {applyAdminBootstrap} = require('../lib/admin-bootstrap');
+const {getStorage, lookupHash} = require('../lib/secret-storage');
 
 async function init() {
     const hasUsersTable = await knex.schema.hasTable('users');
@@ -21,6 +22,10 @@ async function init() {
         password: process.env.ADMIN_PASSWORD,
         accessToken: process.env.ADMIN_ACCESS_TOKEN,
         hashPassword: password => bcryptHash(password, null, null),
+        hashAccessToken: token => ({
+            hash: lookupHash(token, 'access-token'),
+            keyId: getStorage({required: true}).keyId
+        }),
         updateAdmin: fields => knex('users').where({id: getAdminId()}).update(fields)
     });
     if (bootstrapped) {
@@ -33,4 +38,3 @@ async function init() {
 }
 
 init().catch(err => {log.error('', err); process.exit(1); });
-

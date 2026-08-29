@@ -246,6 +246,13 @@ reports:
   unsafeJavaScriptExecution: false
 
 security:
+  secrets:
+    # Supply these through MAILTRAIN_MASTER_KEY (32 random bytes, base64) and
+    # MAILTRAIN_MASTER_KEY_ID. Never commit or persist the key in this file.
+    masterKey:
+    keyId:
+    # Existing installations may opt in only while the migration is running.
+    allowPlaintextCompatibility: false
   legacyQueryTokens:
     enabled: false
   sessions:

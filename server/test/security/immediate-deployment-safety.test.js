@@ -31,13 +31,16 @@ test('admin credentials are written only for a fresh bootstrap', async () => {
         password: 'Synthetic-Admin-Bootstrap-Password-123!',
         accessToken: 'synthetic-bootstrap-token',
         hashPassword: async password => `hashed:${password}`,
+        hashAccessToken: async token => ({hash: Buffer.from(`hashed:${token}`), keyId: 'test-key'}),
         updateAdmin: async fields => updates.push(fields)
     };
 
     assert.equal(await applyAdminBootstrap({...dependencies, existingAdmin: null}), true);
     assert.deepEqual(updates, [{
         password: 'hashed:Synthetic-Admin-Bootstrap-Password-123!',
-        access_token: 'synthetic-bootstrap-token'
+        access_token: null,
+        access_token_hash: Buffer.from('hashed:synthetic-bootstrap-token'),
+        access_token_key_id: 'test-key'
     }]);
 
     updates.length = 0;

@@ -11,6 +11,7 @@ const builtinZoneMta = require('../lib/builtin-zone-mta');
 const {CampaignActivityType} = require('../../shared/activity-log');
 const activityLog = require('../lib/activity-log');
 const {MessageType} = require('../lib/message-sender');
+const {secretProcessEnvironment} = require('../lib/secret-storage');
 require('../lib/fork');
 
 class Notifications {
@@ -581,7 +582,7 @@ async function scheduleQueued() {
     queuedSchedulerRunning = true;
 
     try {
-        const sendConfigurationsIdsInProcessing = [...sendConfigurationMessageQueue.keys()];
+const sendConfigurationsIdsInProcessing = [...sendConfigurationMessageQueue.keys()];
         const postponedSendConfigurationIds = getPostponedSendConfigurationIds();
 
         // prune old messages
@@ -629,7 +630,8 @@ async function spawnWorker(workerId) {
             cwd: path.join(__dirname, '..'),
             env: {
                 NODE_ENV: process.env.NODE_ENV,
-                BUILTIN_ZONE_MTA_PASSWORD: builtinZoneMta.getPassword()
+                BUILTIN_ZONE_MTA_PASSWORD: builtinZoneMta.getPassword(),
+                ...secretProcessEnvironment()
             }
         });
 

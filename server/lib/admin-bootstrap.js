@@ -13,7 +13,7 @@ function validateAdminPassword(password) {
     }
 }
 
-async function applyAdminBootstrap({existingAdmin, password, accessToken, hashPassword, updateAdmin}) {
+async function applyAdminBootstrap({existingAdmin, password, accessToken, hashPassword, hashAccessToken, updateAdmin}) {
     validateAdminPassword(password);
 
     if (existingAdmin) {
@@ -24,7 +24,13 @@ async function applyAdminBootstrap({existingAdmin, password, accessToken, hashPa
         password: await hashPassword(password)
     };
     if (accessToken) {
-        fields.access_token = accessToken;
+        if (typeof hashAccessToken !== 'function') {
+            throw new Error('Access-token hashing is required for administrator bootstrap');
+        }
+        const hashedToken = await hashAccessToken(accessToken);
+        fields.access_token = null;
+        fields.access_token_hash = hashedToken.hash;
+        fields.access_token_key_id = hashedToken.keyId;
     }
 
     await updateAdmin(fields);

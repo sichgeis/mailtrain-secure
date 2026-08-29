@@ -2,6 +2,8 @@
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const {
@@ -20,6 +22,7 @@ const {
 
 const KEY_A = crypto.createHash('sha256').update('stage-7-key-a').digest();
 const KEY_B = crypto.createHash('sha256').update('stage-7-key-b').digest();
+const repositoryRoot = path.resolve(__dirname, '../../..');
 
 test('AES-256-GCM envelopes are versioned, randomized, authenticated, and row-bound', () => {
     const envelope = new SecretEnvelope({activeKeyId: 'key-a', keys: {'key-a': KEY_A}});
@@ -135,4 +138,16 @@ test('record migration is transactional per record, resumable, idempotent, and s
     });
     assert.deepEqual(migrated, {scanned: 3, migrated: 2, skipped: 1, lastId: 3, dryRun: false});
     assert.deepEqual(writes, [1, 2]);
+});
+
+test('token rotation is row-locked and only required sender processes inherit secret material', () => {
+    const users = fs.readFileSync(path.join(repositoryRoot, 'server/models/users.js'), 'utf8');
+    const senders = fs.readFileSync(path.join(repositoryRoot, 'server/lib/senders.js'), 'utf8');
+    const senderMaster = fs.readFileSync(path.join(repositoryRoot, 'server/services/sender-master.js'), 'utf8');
+    const genericFork = fs.readFileSync(path.join(repositoryRoot, 'server/lib/fork.js'), 'utf8');
+
+    assert.match(users, /access_token_hash:[\s\S]*?\.forUpdate\(\)\.first\(\)/);
+    assert.match(senders, /\.\.\.secretProcessEnvironment\(\)/);
+    assert.match(senderMaster, /\.\.\.secretProcessEnvironment\(\)/);
+    assert.doesNotMatch(genericFork, /MAILTRAIN_MASTER_KEY/);
 });

@@ -29,5 +29,7 @@ www:
   secret: synthetic-ci-session-secret-not-for-production
 
 security:
+  secrets:
+    allowPlaintextCompatibility: true
   sessions:
     secure: false

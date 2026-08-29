@@ -28,6 +28,7 @@ const {
 } = require('./lib/browser-security');
 const {redactLogMessage} = require('./lib/log-redaction');
 const {configureRateLimitStore, MemoryRateLimitStore, RedisRateLimitStore} = require('./lib/rate-limit');
+const {validateSecretStorage} = require('./lib/secret-storage');
 
 const api = require('./routes/api');
 
@@ -152,6 +153,7 @@ async function createApp(appType) {
         secure: config.security.sessions.secure,
         name: config.security.sessions.name
     }, {production});
+    validateSecretStorage({production});
     const appOrigin = appType === AppType.TRUSTED ? trustedOrigin : appType === AppType.SANDBOXED ? sandboxOrigin : publicOrigin;
 
     function install404Fallback(url) {
