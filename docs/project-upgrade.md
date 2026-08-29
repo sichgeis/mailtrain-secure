@@ -42,6 +42,26 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 | 8. Netcup deployment and datastore isolation | Pending | Traefik Compose, non-root containers, private authenticated datastores, least-privilege principals, and rollback guidance. |
 | 9. Runtime, dependency, and supply-chain completion | Pending | Supported dependencies, reproducible builds, SBOM/image scanning, and no unaccepted critical/high production advisories. |
 
+## GitHub Tracking
+
+- Umbrella tracker: [#17](https://github.com/sichgeis/mailtrain-secure/issues/17)
+- Test harness: [#1](https://github.com/sichgeis/mailtrain-secure/issues/1)
+- Authorization escalation: [#2](https://github.com/sichgeis/mailtrain-secure/issues/2)
+- Default credential and backend exposure: [#3](https://github.com/sichgeis/mailtrain-secure/issues/3)
+- Unsafe reports: [#4](https://github.com/sichgeis/mailtrain-secure/issues/4)
+- Webhook authenticity and AWS SSRF: [#5](https://github.com/sichgeis/mailtrain-secure/issues/5)
+- Multipart exhaustion: [#6](https://github.com/sichgeis/mailtrain-secure/issues/6)
+- Campaign/RSS outbound SSRF: [#7](https://github.com/sichgeis/mailtrain-secure/issues/7)
+- Runtime and dependencies: [#8](https://github.com/sichgeis/mailtrain-secure/issues/8)
+- Credential URL/log leakage: [#9](https://github.com/sichgeis/mailtrain-secure/issues/9)
+- Sessions and browser security: [#10](https://github.com/sichgeis/mailtrain-secure/issues/10)
+- Mosaico traversal: [#11](https://github.com/sichgeis/mailtrain-secure/issues/11)
+- Stored XSS and origin isolation: [#12](https://github.com/sichgeis/mailtrain-secure/issues/12)
+- Abuse controls and PII logs: [#13](https://github.com/sichgeis/mailtrain-secure/issues/13)
+- Reproducible supply chain: [#14](https://github.com/sichgeis/mailtrain-secure/issues/14)
+- Secret encryption and token hashing: [#15](https://github.com/sichgeis/mailtrain-secure/issues/15)
+- Netcup and datastore hardening: [#16](https://github.com/sichgeis/mailtrain-secure/issues/16)
+
 ## Decisions and Risks
 
 - API authentication will accept `Authorization: Bearer` and the existing `access-token` header. Query tokens are disabled by default behind an explicit temporary compatibility flag.
@@ -64,4 +84,4 @@ None.
 
 ## Next Action
 
-Create the GitHub milestone and issue set, link them here, then characterize the current build and establish the Stage 1 Node 24 test/CI harness.
+Characterize the current build and establish the Stage 1 Node 24 test/CI harness under issue #1.
