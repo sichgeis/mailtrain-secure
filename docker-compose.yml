@@ -26,6 +26,12 @@ services:
     environment:
     - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in the environment}
     - ADMIN_ACCESS_TOKEN=${ADMIN_ACCESS_TOKEN:-}
+    - WWW_SECRET=${WWW_SECRET:?Set WWW_SECRET to at least 32 random bytes encoded as base64url}
+    - SESSION_COOKIE_SECURE=true
+    - URL_BASE_TRUSTED=${URL_BASE_TRUSTED:?Set the trusted HTTPS origin}
+    - URL_BASE_SANDBOX=${URL_BASE_SANDBOX:?Set the sandbox HTTPS origin}
+    - URL_BASE_PUBLIC=${URL_BASE_PUBLIC:?Set the public HTTPS origin}
+    - WWW_PROXY=${WWW_PROXY:-1}
     expose:
     - "3000"
     - "3003"

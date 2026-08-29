@@ -27,3 +27,7 @@ www:
   sandboxUrlBase: http://127.0.0.1:3003
   publicUrlBase: http://127.0.0.1:3004
   secret: synthetic-ci-session-secret-not-for-production
+
+security:
+  sessions:
+    secure: false

@@ -20,7 +20,7 @@ function getMenus(t) {
 
         subPaths.reset = {
             title: t('passwordReset-1'),
-            extraParams: [':username', ':resetToken'],
+            extraParams: [':username'],
             link: '/login/reset',
             panelComponent: ResetLink
         };

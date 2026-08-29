@@ -7,6 +7,8 @@ const lists = require('../models/lists');
 const users = require('../models/users');
 const contextHelpers = require('../lib/context-helpers');
 const { AppType } = require('../../shared/app');
+const {untrustedContentSecurityPolicy} = require('../lib/browser-security');
+const {sanitizeUntrustedHtml} = require('../lib/html-sanitizer');
 
 
 users.registerRestrictedAccessTokenMethod('rssPreview', async ({campaignCid, listCid}) => {
@@ -34,23 +36,14 @@ async function getRouter(appType) {
         router.get('/rss-preview/:campaign/:list/:subscription', passport.loggedIn, (req, res, next) => {
             campaigns.getRssPreview(req.context, req.params.campaign, req.params.list, req.params.subscription)
                 .then(result => {
-                    const {html} = result;
+                    const html = sanitizeUntrustedHtml(result.html);
+                    res.setHeader('Content-Security-Policy', untrustedContentSecurityPolicy({frameAncestor: getTrustedUrl()}));
 
                     if (html.match(/<\/body\b/i)) {
-                        res.render('partials/tracking-scripts', {
-                            layout: 'archive/layout-raw'
-                        }, (err, scripts) => {
-                            if (err) {
-                                return next(err);
-                            }
-                            const htmlWithScripts = scripts ? html.replace(/<\/body\b/i, match => scripts + match) : html;
-
-                            res.render('archive/view', {
-                                layout: 'archive/layout-raw',
-                                message: htmlWithScripts
-                            });
+                        res.render('archive/view', {
+                            layout: 'archive/layout-raw',
+                            message: html
                         });
-
                     } else {
                         res.render('archive/view', {
                             layout: 'archive/layout-wrapped',

@@ -2,6 +2,7 @@
 
 const router = require('../lib/router-async').create();
 const {fetch: outboundFetch} = require('../lib/outbound-fetch');
+const {webhookRateLimiters} = require('../lib/request-rate-limiters');
 const campaigns = require('../models/campaigns');
 const sendConfigurations = require('../models/send-configurations');
 const contextHelpers = require('../lib/context-helpers');
@@ -95,7 +96,7 @@ async function fetchAwsCertificate(uri) {
 }
 
 
-router.postAsync('/aws', async (req, res) => {
+router.postAsync('/aws', webhookRateLimiters.aws, async (req, res) => {
     assertProviderEnabled(webhookConfig.aws);
     req.body = parseJsonBody(req.body);
 
@@ -145,13 +146,13 @@ router.postAsync('/aws', async (req, res) => {
                         switch (req.body.Message.notificationType) {
                             case 'Bounce':
                                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.Message.bounce.bounceType === 'Permanent');
-                                log.verbose('AWS', 'Marked message %s as bounced', req.body.Message.mail.messageId);
+                                log.verbose('AWS', 'Marked an authenticated provider event as bounced');
                                 break;
 
                             case 'Complaint':
                                 if (req.body.Message.complaint) {
                                     await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                                    log.verbose('AWS', 'Marked message %s as complaint', req.body.Message.mail.messageId);
+                                    log.verbose('AWS', 'Marked an authenticated provider event as complaint');
                                 }
                                 break;
                         }
@@ -167,7 +168,7 @@ router.postAsync('/aws', async (req, res) => {
 });
 
 
-router.postAsync('/sparkpost', async (req, res) => {
+router.postAsync('/sparkpost', webhookRateLimiters.sparkpost, async (req, res) => {
     assertProviderEnabled(webhookConfig.sparkpost);
     assertBasicAuthorization(req.get('authorization'), webhookConfig.sparkpost);
     const batchId = req.get('x-messagesystems-batch-id');
@@ -191,7 +192,7 @@ router.postAsync('/sparkpost', async (req, res) => {
             continue;
         }
 
-        log.verbose('Sendgrid', 'Received issue "%s" for message id "%s"', evt.type, evt.campaign_id);
+        log.verbose('Sparkpost', 'Received authenticated event type "%s"', evt.type);
 
         const message = await campaigns.getMessageByCid(evt.campaign_id);
         if (!message) {
@@ -202,17 +203,17 @@ router.postAsync('/sparkpost', async (req, res) => {
             case 'bounce':
                 // https://support.sparkpost.com/customer/portal/articles/1929896
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, [1, 10, 25, 30, 50].indexOf(Number(evt.bounce_class)) >= 0);
-                log.verbose('Sparkpost', 'Marked message %s as bounced', evt.campaign_id);
+                log.verbose('Sparkpost', 'Marked an authenticated provider event as bounced');
                 break;
 
             case 'spam_complaint':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                log.verbose('Sparkpost', 'Marked message %s as complaint', evt.campaign_id);
+                log.verbose('Sparkpost', 'Marked an authenticated provider event as complaint');
                 break;
 
             case 'link_unsubscribe':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
-                log.verbose('Sparkpost', 'Marked message %s as unsubscribed', evt.campaign_id);
+                log.verbose('Sparkpost', 'Marked an authenticated provider event as unsubscribed');
                 break;
         }
     }
@@ -223,7 +224,7 @@ router.postAsync('/sparkpost', async (req, res) => {
 });
 
 
-router.postAsync('/sendgrid', async (req, res) => {
+router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => {
     assertProviderEnabled(webhookConfig.sendgrid);
     verifySendGridSignature({
         rawBody: req.rawBody,
@@ -241,7 +242,7 @@ router.postAsync('/sendgrid', async (req, res) => {
             continue;
         }
 
-        log.verbose('Sendgrid', 'Received issue "%s" for message id "%s"', evt.event, evt.campaign_id);
+        log.verbose('Sendgrid', 'Received authenticated event type "%s"', evt.event);
 
         const message = await campaigns.getMessageByCid(evt.campaign_id);
         if (!message) {
@@ -252,18 +253,18 @@ router.postAsync('/sendgrid', async (req, res) => {
             case 'bounce':
                 // https://support.sparkpost.com/customer/portal/articles/1929896
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                log.verbose('Sendgrid', 'Marked message %s as bounced', evt.campaign_id);
+                log.verbose('Sendgrid', 'Marked an authenticated provider event as bounced');
                 break;
 
             case 'spamreport':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                log.verbose('Sendgrid', 'Marked message %s as complaint', evt.campaign_id);
+                log.verbose('Sendgrid', 'Marked an authenticated provider event as complaint');
                 break;
 
             case 'group_unsubscribe':
             case 'unsubscribe':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
-                log.verbose('Sendgrid', 'Marked message %s as unsubscribed', evt.campaign_id);
+                log.verbose('Sendgrid', 'Marked an authenticated provider event as unsubscribed');
                 break;
         }
     }
@@ -274,7 +275,7 @@ router.postAsync('/sendgrid', async (req, res) => {
 });
 
 
-router.postAsync('/mailgun', requireProvider(webhookConfig.mailgun), mailgunUpload, async (req, res) => {
+router.postAsync('/mailgun', webhookRateLimiters.mailgun, requireProvider(webhookConfig.mailgun), mailgunUpload, async (req, res) => {
     assertExpectedFields(req.body, mailgunFields);
     verifyMailgunSignature(req.body, {
         signingKey: webhookConfig.mailgun.signingKey,
@@ -283,24 +284,24 @@ router.postAsync('/mailgun', requireProvider(webhookConfig.mailgun), mailgunUplo
     });
     const evt = req.body;
 
-    log.verbose('Mailgun', 'Received issue "%s" for message id "%s"', evt.event, evt.campaign_id);
+    log.verbose('Mailgun', 'Received authenticated event type "%s"', evt.event);
 
     const message = await campaigns.getMessageByCid([].concat(evt && evt.campaign_id || []).shift());
     if (message) {
         switch (evt.event) {
             case 'bounced':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                log.verbose('Mailgun', 'Marked message %s as bounced', evt.campaign_id);
+                log.verbose('Mailgun', 'Marked an authenticated provider event as bounced');
                 break;
 
             case 'complained':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                log.verbose('Mailgun', 'Marked message %s as complaint', evt.campaign_id);
+                log.verbose('Mailgun', 'Marked an authenticated provider event as complaint');
                 break;
 
             case 'unsubscribed':
                 await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
-                log.verbose('Mailgun', 'Marked message %s as unsubscribed', evt.campaign_id);
+                log.verbose('Mailgun', 'Marked an authenticated provider event as unsubscribed');
                 break;
         }
     }
@@ -311,7 +312,7 @@ router.postAsync('/mailgun', requireProvider(webhookConfig.mailgun), mailgunUplo
 });
 
 
-router.postAsync('/zone-mta', async (req, res) => {
+router.postAsync('/zone-mta', webhookRateLimiters.zoneMta, async (req, res) => {
     const zoneMtaToken = webhookConfig.zoneMta.token || (config.builtinZoneMTA.enabled ? builtinZoneMta.getPassword() : null);
     if (!config.builtinZoneMTA.enabled) {
         assertProviderEnabled(webhookConfig.zoneMta);
@@ -325,7 +326,7 @@ router.postAsync('/zone-mta', async (req, res) => {
 
         if (message) {
             await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-            log.verbose('ZoneMTA', 'Marked message (campaign:%s, list:%s, subscription:%s) as bounced', message.campaign, message.list, message.subscription);
+            log.verbose('ZoneMTA', 'Marked an authenticated provider event as bounced');
         }
     }
 
@@ -335,7 +336,7 @@ router.postAsync('/zone-mta', async (req, res) => {
 });
 
 
-router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', async (req, res) => {
+router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', webhookRateLimiters.zoneMta, async (req, res) => {
     const sendConfiguration = await sendConfigurations.getByCid(contextHelpers.getAdminContext(), req.params.sendConfigurationCid, false, true);
 
     if (sendConfiguration.mailer_type !== MailerType.ZONE_MTA) {
@@ -369,7 +370,7 @@ router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', async (req, re
 });
 
 
-router.postAsync('/postal', async (req, res) => {
+router.postAsync('/postal', webhookRateLimiters.postal, async (req, res) => {
     assertProviderEnabled(webhookConfig.postal);
     req.body = parseJsonBody(req.body);
     verifyPostalSignature({
@@ -391,7 +392,7 @@ router.postAsync('/postal', async (req, res) => {
                 const message = await campaigns.getMessageByResponseId(req.body.payload.message.message_id);
                 if (message) {
                     await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.payload.status === 'HardFail');
-                    log.verbose('Postal', 'Marked message %s as bounced', req.body.payload.message.message_id);
+                    log.verbose('Postal', 'Marked an authenticated provider event as bounced');
                 }
             }
             break;
@@ -401,7 +402,7 @@ router.postAsync('/postal', async (req, res) => {
                 const message = await campaigns.getMessageByResponseId(req.body.payload.original_message.message_id);
                 if (message) {
                     await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                    log.verbose('Postal', 'Marked message %s as bounced', req.body.payload.original_message.message_id);
+                    log.verbose('Postal', 'Marked an authenticated provider event as bounced');
                 }
             }
             break;

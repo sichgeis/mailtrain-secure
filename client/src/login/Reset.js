@@ -38,6 +38,12 @@ export default class Account extends Component {
         super(props);
 
         this.passwordValidator = passwordValidator(props.t);
+        try {
+            this.resetToken = decodeURIComponent(window.location.hash.slice(1));
+        } catch (err) {
+            this.resetToken = '';
+        }
+        window.history.replaceState(window.history.state, document.title, window.location.pathname + window.location.search);
 
         this.state = {
             resetTokenValidationState: ResetTokenValidationState.PENDING
@@ -58,7 +64,7 @@ export default class Account extends Component {
 
         const response = await axios.post(getUrl('rest/password-reset-validate'), {
             username: params.username,
-            resetToken: params.resetToken
+            resetToken: this.resetToken
         });
 
         this.setState({
@@ -71,7 +77,7 @@ export default class Account extends Component {
 
         this.populateFormValues({
             username: params.username,
-            resetToken: params.resetToken,
+            resetToken: this.resetToken,
             password: '',
             password2: ''
         });

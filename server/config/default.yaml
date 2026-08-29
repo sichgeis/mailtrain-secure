@@ -246,6 +246,43 @@ reports:
   unsafeJavaScriptExecution: false
 
 security:
+  legacyQueryTokens:
+    enabled: false
+  sessions:
+    name: mailtrain.sid
+    secure: false
+    maxAgeMs: 43200000
+    rememberMaxAgeMs: 2592000000
+  rateLimits:
+    maxEntries: 20000
+    login:
+      limit: 30
+      windowMs: 900000
+    loginAccount:
+      limit: 10
+      windowMs: 900000
+    passwordReset:
+      limit: 20
+      windowMs: 3600000
+    passwordResetAccount:
+      limit: 5
+      windowMs: 3600000
+    restrictedAccessToken:
+      limit: 120
+      windowMs: 60000
+    subscription:
+      limit: 20
+      windowMs: 3600000
+    subscriptionMutation:
+      limit: 30
+      windowMs: 3600000
+    webhook:
+      limit: 1000
+      windowMs: 60000
+  restrictedAccessTokens:
+    ttlMs: 120000
+    maxEntries: 10000
+    maxPerUser: 20
   # Maximum time an HTTP request may occupy a Mailtrain server connection.
   requestTimeoutMs: 15000
   headersTimeoutMs: 10000

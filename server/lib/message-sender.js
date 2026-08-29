@@ -471,7 +471,7 @@ class MessageSender {
             throw err;
         }
 
-        log.verbose('MessageSender', `response: ${info.response}   messageId: ${info.messageId}`);
+        log.verbose('MessageSender', 'Provider accepted the message');
 
         let match;
         if ((match = info.response.match(/^250 Message queued as ([0-9a-f]+)$/))) {
@@ -666,7 +666,7 @@ async function sendQueuedMessage(queuedMessage) {
                         await files.unlockTx(tx, 'campaign', 'attachment', attachment.id);
                     });
                 } catch (err) {
-                    log.error('MessageSender', `Error when unlocking attachment ${attachment.id} for ${result.email} (queuedId: ${queuedMessage.id})`);
+                    log.error('MessageSender', `Error when unlocking attachment ${attachment.id} for queued message ${queuedMessage.id}`);
                     log.verbose(err.stack);
                 }
             }

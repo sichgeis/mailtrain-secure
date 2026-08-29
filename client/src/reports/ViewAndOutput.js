@@ -35,7 +35,7 @@ export default class ViewAndOutput extends Component {
                 getTitle: name => t('reportName', { name }),
                 loading: t('loadingReport'),
                 finishedStates: new Set([ReportState.FINISHED]),
-                getContent: content => <div dangerouslySetInnerHTML={{ __html: content }}/>
+                getContent: content => <iframe title={t('reportName', {name: ''})} sandbox="" srcDoc={content}/>
             },
             output: {
                 url: 'rest/report-output',

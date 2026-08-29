@@ -255,12 +255,13 @@ Provider webhook verification and request-limit migration is documented in [Webh
 | PORT_TRUSTED     | sets the trusted port of the instance (default: 3000)                 |
 | PORT_SANDBOX     | sets the sandbox port of the instance (default: 3003)                 |
 | PORT_PUBLIC      | sets the public port of the instance (default: 3004)                  |
-| URL_BASE_TRUSTED | sets the external trusted url of the instance (default: http://localhost:3000), e.g. https://mailtrain.example.com |
-| URL_BASE_SANDBOX | sets the external sandbox url of the instance (default: http://localhost:3003), e.g. https://sbox-mailtrain.example.com |
-| URL_BASE_PUBLIC  | sets the external public url of the instance (default: http://localhost:3004), e.g. https://lists.example.com |
+| URL_BASE_TRUSTED | required distinct production HTTPS origin for the trusted app, e.g. https://mailtrain.example.com |
+| URL_BASE_SANDBOX | required distinct production HTTPS origin for sandbox content, e.g. https://sbox-mailtrain.example.com |
+| URL_BASE_PUBLIC  | required distinct production HTTPS origin for public content, e.g. https://lists.example.com |
 | WWW_HOST         | sets the address that the server binds to (default: 0.0.0.0)          |
-| WWW_PROXY        | use if Mailtrain is behind an http reverse proxy (default: false)     |
-| WWW_SECRET       | sets the secret for the express session (default: `$(pwgen -1)`)      |
+| WWW_PROXY        | exact trusted proxy hop count/address policy; Compose default: `1`    |
+| WWW_SECRET       | required persistent session secret: at least 32 random bytes encoded as base64url |
+| SESSION_COOKIE_SECURE | requires HTTPS-only session cookies; production Docker default: `true` |
 | MONGO_HOST       | sets mongo host (default: mongo)                                      |
 | WITH_REDIS       | enables or disables redis (default: true)                             |
 | REDIS_HOST       | sets redis host (default: redis)                                      |

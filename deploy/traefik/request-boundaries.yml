@@ -8,3 +8,11 @@ http:
       buffering:
         maxRequestBodyBytes: 65536
         memRequestBodyBytes: 65536
+    mailtrain-browser-security:
+      headers:
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        customResponseHeaders:
+          Permissions-Policy: "camera=(), microphone=(), geolocation=(), payment=(), usb=()"

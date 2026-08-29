@@ -33,7 +33,7 @@ async function onRcptTo(address, session) {
 
     session.message = message;
 
-    log.verbose('VERP', 'Incoming message for campaign:%s, list:%s, subscription:%s', message.campaign, message.list, message.subscription);
+    log.verbose('VERP', 'Incoming message matched a tracked recipient');
 }
 
 function onData(stream, session, callback) {
@@ -50,14 +50,14 @@ function onData(stream, session, callback) {
             bounceResult = [].concat(bh.parse_email(body) || []).shift();
         } catch (err) {
             log.error('Bounce', 'Failed parsing bounce message');
-            log.error('Bounce', JSON.stringify(body));
+            log.error('Bounce', 'Unable to parse an incoming VERP message');
         }
 
         if (!bounceResult || ['failed', 'transient'].indexOf(bounceResult.action) < 0) {
             return 'Message accepted';
         } else {
             await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), session.message, CampaignMessageStatus.BOUNCED, bounceResult.action === 'failed');
-            log.verbose('VERP', 'Marked message (campaign:%s, list:%s, subscription:%s) as unsubscribed', session.message.campaign, session.message.list, session.message.subscription);
+            log.verbose('VERP', 'Marked a tracked recipient as unsubscribed');
         }
     };
 

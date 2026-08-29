@@ -13,7 +13,8 @@ URL_BASE_SANDBOX=${URL_BASE_SANDBOX:-"http://localhost:${PORT_SANDBOX}"}
 URL_BASE_PUBLIC=${URL_BASE_PUBLIC:-"http://localhost:${PORT_PUBLIC}"}
 WWW_HOST=${WWW_HOST:-'0.0.0.0'}
 WWW_PROXY=${WWW_PROXY:-'false'}
-WWW_SECRET=${WWW_SECRET:-$(pwgen -1)}
+WWW_SECRET=${WWW_SECRET:-''}
+SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-'true'}
 WITH_LDAP=${WITH_LDAP:-'false'}
 LDAP_HOST=${LDAP_HOST:-'ldap'}
 LDAP_PORT=${LDAP_PORT:-'389'}
@@ -68,6 +69,8 @@ if [ -f server/config/production.yaml ]; then
     echo 'Info: application/production.yaml already provisioned'
 else
     echo 'Info: Generating application/production.yaml'
+    export WWW_SECRET SESSION_COOKIE_SECURE
+    NODE_ENV=production node server/setup/validate-session-secret.js
 
     # Basic configuration
     cat >> server/config/production.yaml <<EOT
@@ -81,6 +84,11 @@ www:
   trustedUrlBase: $URL_BASE_TRUSTED
   sandboxUrlBase: $URL_BASE_SANDBOX
   publicUrlBase: $URL_BASE_PUBLIC
+
+security:
+  sessions:
+    name: __Host-mailtrain.sid
+    secure: $SESSION_COOKIE_SECURE
 
 mysql:
   host: $MYSQL_HOST

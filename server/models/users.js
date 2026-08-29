@@ -31,6 +31,7 @@ const allowedKeysExternal = new Set(['username', 'namespace', 'role', 'name', 'e
 const hashKeys = new Set(['username', 'name', 'email', 'namespace', 'role']);
 const shares = require('./shares');
 const contextHelpers = require('../lib/context-helpers');
+const {RestrictedTokenStore} = require('../lib/restricted-token-store');
 
 function hash(entity) {
     return hasher.hash(filterObject(entity, hashKeys));
@@ -337,7 +338,7 @@ async function sendPasswordReset(locale, usernameOrEmail) {
                     title: tUI('mailtrain', locale),
                     username: user.username,
                     name: user.name,
-                    confirmUrl: getTrustedUrl(`login/reset/${encodeURIComponent(user.username)}/${encodeURIComponent(resetToken)}`)
+                    confirmUrl: `${getTrustedUrl(`login/reset/${encodeURIComponent(user.username)}`)}#${encodeURIComponent(resetToken)}`
                 }
             }
         );
@@ -383,7 +384,7 @@ async function resetPassword(username, resetToken, password) {
 
 
 const restrictedAccessTokenMethods = {};
-const restrictedAccessTokens = new Map();
+const restrictedAccessTokens = new RestrictedTokenStore(config.security.restrictedAccessTokens);
 
 function registerRestrictedAccessTokenMethod(method, getHandlerFromParams) {
     restrictedAccessTokenMethods[method] = getHandlerFromParams;
@@ -394,33 +395,23 @@ async function getRestrictedAccessToken(context, method, params) {
     const tokenEntry = {
         token,
         userId: context.user.id,
-        handler: await restrictedAccessTokenMethods[method](params),
-        expires: Date.now() + 120 * 1000
+        method,
+        params,
+        handler: await restrictedAccessTokenMethods[method](params)
     };
 
-    restrictedAccessTokens.set(token, tokenEntry);
+    restrictedAccessTokens.create(tokenEntry);
 
     return token;
 }
 
 async function refreshRestrictedAccessToken(context, token) {
-    const tokenEntry = restrictedAccessTokens.get(token);
-
-    if (tokenEntry && tokenEntry.userId === context.user.id) {
-        tokenEntry.expires = Date.now() + 120 * 1000
-    } else {
+    if (!restrictedAccessTokens.refresh(token, context.user.id)) {
         shares.throwPermissionDenied();
     }
 }
 
 async function getByRestrictedAccessToken(token) {
-    const now = Date.now();
-    for (const entry of restrictedAccessTokens.values()) {
-        if (entry.expires < now) {
-            restrictedAccessTokens.delete(entry.token);
-        }
-    }
-
     const tokenEntry = restrictedAccessTokens.get(token);
 
     if (tokenEntry) {
