@@ -132,6 +132,13 @@ test('ZoneMTA bounce and DKIM credentials are accepted only from headers', () =>
     assert.doesNotMatch(routes, /uploads\.any\(\)/);
     assert.doesNotMatch(routes, /req\.query\.api_token/);
     assert.match(routes, /authorization/i);
+
+    const builtinZoneMta = fs.readFileSync(path.join(repositoryRoot, 'server/lib/builtin-zone-mta.js'), 'utf8');
+    const zoneMtaPlugin = fs.readFileSync(path.join(repositoryRoot, 'zone-mta/plugins/mailtrain-main.js'), 'utf8');
+    assert.match(builtinZoneMta, /"core\/http-bounce": false/);
+    assert.match(builtinZoneMta, /bounceToken/);
+    assert.match(zoneMtaPlugin, /Authorization/);
+    assert.match(zoneMtaPlugin, /Bearer/);
 });
 
 test('body parsing and webhook defaults are bounded and fail closed', () => {
