@@ -19,7 +19,7 @@
     "test": "npm run test:fast",
     "test:fast": "node --test test/harness/*.test.js test/security/*.test.js",
     "test:coverage": "c8 --reporter=text --reporter=lcov npm run test:fast",
-    "test:integration": "NODE_ENV=test node test/integration/schema-smoke.js",
+    "test:integration": "NODE_ENV=test node test/integration/schema-smoke.js && NODE_ENV=test node test/integration/rbac-boundaries.js",
     "test:playwright": "playwright test --config test/playwright/playwright.config.js"
   },
   "repository": {
