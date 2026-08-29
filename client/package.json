@@ -4,7 +4,7 @@
   "description": "Self hosted email newsletter app - client components",
   "main": "index.js",
   "scripts": {
-    "js": "webpack",
+    "js": "node --stack_size=8192 ./node_modules/webpack/bin/webpack.js",
     "watch-js": "webpack --watch",
     "css": "npm-run-all --sequential css-compile css-minify",
     "css-compile": "sass --load-path=. --style=expanded --source-map --embed-sources src/scss/mailtrain.scss dist/mailtrain.css",

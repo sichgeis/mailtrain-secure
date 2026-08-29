@@ -183,7 +183,7 @@ jobs:
         run: |
           npm run starttest --prefix server > mailtrain-test.log 2>&1 &
           for attempt in {1..60}; do
-            curl --fail --silent http://127.0.0.1:3000/users/login >/dev/null && exit 0
+            curl --fail --silent http://127.0.0.1:3000/login >/dev/null && exit 0
             sleep 2
           done
           tail -200 mailtrain-test.log
