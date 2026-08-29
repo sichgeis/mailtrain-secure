@@ -35,7 +35,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 | 1. Test and CI foundation | Complete; draft PR review pending | Node 24-compatible layered test harness, dual-database CI, Playwright smoke coverage, deterministic installs, and preserved artifacts. |
 | 2. Authorization boundaries | Complete; draft PR review pending | Enforce share-role ceilings and global-role assignment authority. |
 | 3. Immediate deployment and report safety | Complete; draft PR review pending | Remove default credentials/direct exposure and disable unsafe reports by default. |
-| 4. Webhook and request boundaries | Pending | Authenticate provider events and bound multipart/body processing. |
+| 4. Webhook and request boundaries | Complete; draft PR review pending | Authenticate provider events and bound multipart/body processing. |
 | 5. Outbound network and filesystem controls | Pending | Centralize safe outbound fetching and close Mosaico traversal. |
 | 6. Authentication, browser, logging, and abuse controls | Pending | Header tokens, hardened sessions, CSP/origins, XSS controls, throttling, and redaction. |
 | 7. Versioned secret migration | Pending | Encrypt recoverable secrets and hash bearer/reset tokens with safe migration and rotation tooling. |
@@ -54,6 +54,7 @@ Produce a private, reviewable Mailtrain v2 hardening line that preserves applica
 - Immediate deployment and report-safety draft: [PR #24](https://github.com/sichgeis/mailtrain-secure/pull/24)
 - Webhook authenticity and AWS SSRF: [#5](https://github.com/sichgeis/mailtrain-secure/issues/5)
 - Multipart exhaustion: [#6](https://github.com/sichgeis/mailtrain-secure/issues/6)
+- Webhook/request-boundaries draft: [PR #25](https://github.com/sichgeis/mailtrain-secure/pull/25)
 - Campaign/RSS outbound SSRF: [#7](https://github.com/sichgeis/mailtrain-secure/issues/7)
 - Runtime and dependencies: [#8](https://github.com/sichgeis/mailtrain-secure/issues/8)
 - Credential URL/log leakage: [#9](https://github.com/sichgeis/mailtrain-secure/issues/9)
@@ -93,6 +94,10 @@ For every implementation stage: add or harden the relevant test first, implement
 - The production Compose baseline no longer publishes Mailtrain ports 3000, 3003, or 3004 on the host. It exposes them only to the private Compose network for a reverse proxy to consume.
 - Database-stored JavaScript reports, their routes, client navigation, scheduler, and processor remain disabled unless both report flags are explicitly enabled. Unsafe compatibility mode emits a high-visibility warning that Node vm is not a security boundary.
 - GitHub Actions run [33275597917](https://github.com/sichgeis/mailtrain-secure/actions/runs/33275597917) is green at commit `68153b3d`: 19 Node 24 fast/security tests, focused lint, coverage, client build, MariaDB 10.11 integration, MySQL 8.4 integration, and Playwright all pass.
+- Provider webhooks now fail closed and use their supported authenticity mechanism: AWS SNS signature/topic/certificate validation, SparkPost Basic Authentication plus batch replay detection, SendGrid ECDSA over raw bytes, Mailgun timestamped HMAC, Postal RSA-SHA256 over raw bytes, and header bearer credentials for ZoneMTA/DKIM. Provider routes are disabled until explicitly configured.
+- AWS confirmation accepts only the signed topic's regional SNS HTTPS origin, never follows redirects, and bounds certificate/confirmation fetch duration and certificate size. Provider timestamps and bounded in-process replay caches reject stale or repeated events before state changes.
+- Mailgun multipart handling accepts no files, at most eight parts, and at most 8192 bytes per field. Concurrent oversized requests, file parts, excessive fields, malformed payloads, forged signatures, private SNS destinations, and valid fixtures are covered. Matching 2 MiB general and 64 KiB Mailgun Traefik buffering limits are defined for the Stage 8 router topology.
+- GitHub Actions run [33276615648](https://github.com/sichgeis/mailtrain-secure/actions/runs/33276615648) is green at commit `8977c590`: 28 Node 24 fast/security tests, focused lint, coverage, client build, MariaDB 10.11 integration, MySQL 8.4 integration, and Playwright all pass.
 - The inherited full-repository Grunt lint baseline has 796 pre-existing errors. Stage 1 therefore enforces a clean focused lint gate for the new harness while the broader lint modernization remains part of the runtime/dependency stage.
 - Production dependency audits remain deliberately non-blocking in Stage 1 and are retained as CI artifacts. The accepted critical/high baseline is tracked by issues #8 and #14; Stage 9 makes it a blocking release criterion.
 
@@ -102,4 +107,4 @@ None.
 
 ## Next Action
 
-Start Stage 4 from the green Stage 3 head: characterize provider webhook authentication, AWS SNS confirmation behavior, ZoneMTA/DKIM credentials, multipart limits, and request timeouts before changing request-boundary behavior.
+Start Stage 5 from the green Stage 4 head: characterize AWS confirmation, RSS, campaign URL rendering, redirect, preview, and Mosaico path behavior before introducing the shared outbound-fetch and fixed-base filesystem policies.
