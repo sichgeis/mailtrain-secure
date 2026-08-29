@@ -4,6 +4,10 @@
 
 node_modules
 npm-debug.log
+coverage/
+playwright-report/
+test-results/
+server/test/playwright/playwright-report/
+server/test/playwright/test-results/
 .DS_Store
 dump.rdb
-

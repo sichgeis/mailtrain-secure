@@ -4,8 +4,6 @@ const path = require('path');
 
 module.exports = {
     mode: 'development',
-    plugins: [
-    ],
     entry: {
         "root": ['./src/root.js'],
         "mosaico-root": ['./src/lib/sandboxed-mosaico-root.js'],
@@ -16,7 +14,8 @@ module.exports = {
     output: {
         library: 'MailtrainReactBody',
         filename: '[name].js',
-        path: path.resolve(__dirname, 'dist')
+        path: path.resolve(__dirname, 'dist'),
+        hashFunction: 'sha256'
     },
     module: {
         rules: [
@@ -60,14 +59,14 @@ module.exports = {
             },
             {
                 test: /\.(png|jpg|gif)$/,
-                use: [ 
+                use: [
                     {
                         loader: 'url-loader',
                         options: {
                             limit: 8192 // inline base64 URLs for <=8k images, direct URLs for the rest
                         }
                     }
-                ] 
+                ]
             },
             {
                 test: /\.scss$/,

@@ -1,0 +1,204 @@
+name: Security CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - v2
+      - 'codex/security-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  ALLOW_DESTRUCTIVE_TESTS: YES_I_AM_USING_SYNTHETIC_DATA
+
+jobs:
+  fast-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+            shared/package-lock.json
+      - name: Install server dependencies deterministically
+        working-directory: server
+        run: npm ci
+      - name: Run fast unit and security tests with coverage
+        working-directory: server
+        run: |
+          npm run lint:harness
+          npm run test:fast
+          npm run test:coverage
+      - name: Install client dependencies deterministically
+        working-directory: client
+        run: npm ci
+      - name: Install shared runtime dependencies
+        working-directory: shared
+        run: npm ci --omit=dev
+      - name: Build browser assets
+        working-directory: client
+        run: npm run build
+      - name: Capture production dependency audit baselines
+        run: |
+          npm audit --omit=dev --json --prefix server > server-production-audit.json || true
+          npm audit --omit=dev --json --prefix client > client-production-audit.json || true
+      - name: Preserve dependency audit baselines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-dependency-audits
+          path: |
+            server-production-audit.json
+            client-production-audit.json
+      - name: Preserve coverage on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-build-diagnostics
+          path: |
+            server/coverage
+            client/dist
+          if-no-files-found: ignore
+
+  database-integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - name: mariadb-10.11
+            image: mariadb:10.11
+          - name: mysql-8.4
+            image: mysql:8.4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      database:
+        image: ${{ matrix.database.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: synthetic-root-password
+          MYSQL_DATABASE: mailtrain_ci_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psynthetic-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+    env:
+      NODE_ENV: test
+      NODE_CONFIG: '{"mysql":{"host":"127.0.0.1","user":"root","password":"synthetic-root-password","database":"mailtrain_ci_test","port":3306}}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Clean server install
+        working-directory: server
+        run: npm ci
+      - name: Initialize the synthetic legacy fixture
+        working-directory: server
+        run: npm run sqlinit
+      - name: Apply and verify migrations
+        working-directory: server
+        run: npm run test:integration
+      - name: Preserve database diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-${{ matrix.database.name }}-diagnostics
+          path: server/npm-debug.log
+          if-no-files-found: ignore
+
+  playwright-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      database:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: synthetic-root-password
+          MYSQL_DATABASE: mailtrain_ci_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psynthetic-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    env:
+      NODE_ENV: test
+      NODE_CONFIG: '{"mysql":{"host":"127.0.0.1","user":"root","password":"synthetic-root-password","database":"mailtrain_ci_test","port":3306}}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+            shared/package-lock.json
+            zone-mta/package-lock.json
+      - name: Install application dependencies
+        run: |
+          npm ci --prefix server
+          npm ci --prefix client
+          npm ci --omit=dev --prefix shared
+          npm ci --omit=dev --prefix zone-mta
+      - name: Build client
+        run: npm run build --prefix client
+      - name: Install Playwright Chromium
+        working-directory: server
+        run: npx playwright install --with-deps chromium
+      - name: Initialize synthetic database
+        working-directory: server
+        run: npm run sqlinit
+      - name: Start Mailtrain test application
+        run: |
+          npm run starttest --prefix server > mailtrain-test.log 2>&1 &
+          for attempt in {1..60}; do
+            curl --fail --silent http://127.0.0.1:3000/users/login >/dev/null && exit 0
+            sleep 2
+          done
+          tail -200 mailtrain-test.log
+          exit 1
+      - name: Run Playwright origin and login smoke tests
+        working-directory: server
+        run: npm run test:playwright
+      - name: Preserve browser and application diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-diagnostics
+          path: |
+            mailtrain-test.log
+            server/test/playwright/playwright-report
+            server/test/playwright/test-results
+          if-no-files-found: ignore

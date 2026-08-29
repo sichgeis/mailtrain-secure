@@ -76,7 +76,13 @@ For every implementation stage: add or harden the relevant test first, implement
 
 ## Validation Evidence
 
-No implementation validation has been recorded yet. The repository audit and production dependency audit were read-only; they established the accepted scope but do not count as completion evidence.
+- Baseline `npm ci --ignore-scripts` failed because the inherited lockfile v1 was inconsistent (`compressjs` and `elliptic` resolutions). All application lockfiles are now npm lockfile v3 generated with Node 24.6.0/npm 11.5.1.
+- Node 24 fast/security suite: 9 passing tests. Coverage is 100% for the destructive-database guard; the worker environment allowlist is also exercised.
+- Node 24 client clean install and build pass with Dart Sass and an explicit SHA-256 Webpack build hash. Remaining Sass deprecation warnings belong to the inherited CoreUI/Bootstrap styles and are tracked for Stage 9.
+- Synthetic MySQL 8 initialization and Knex migration pass locally, validating 67 tables. MariaDB 10.11 and MySQL 8.4 remain required CI matrix checks.
+- Playwright smoke passes login, subscription rendering, and trusted/sandbox/public origin separation against isolated local MySQL and Redis containers.
+- The inherited full-repository Grunt lint baseline has 796 pre-existing errors. Stage 1 therefore enforces a clean focused lint gate for the new harness while the broader lint modernization remains part of the runtime/dependency stage.
+- Production dependency audits remain deliberately non-blocking in Stage 1 and are retained as CI artifacts. The accepted critical/high baseline is tracked by issues #8 and #14; Stage 9 makes it a blocking release criterion.
 
 ## Current Blocker
 
@@ -84,4 +90,4 @@ None.
 
 ## Next Action
 
-Characterize the current build and establish the Stage 1 Node 24 test/CI harness under issue #1.
+Push the Stage 1 implementation, run the GitHub CI matrix, and resolve every failing head check before marking issue #1 complete.
