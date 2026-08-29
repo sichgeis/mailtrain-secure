@@ -30,11 +30,13 @@ test('unsafe cross-origin requests fail before authentication handling', async (
 });
 
 test('sandbox and public origins receive role-specific framing policy', async ({request}) => {
-    const sandboxResponse = await request.get(`${sandboxOrigin}/does-not-exist`);
+    const sandboxResponse = await request.get(`${sandboxOrigin}/anonymous/codeeditor/editor`);
+    expect(sandboxResponse.status()).toBe(200);
     expect(sandboxResponse.headers()['content-security-policy']).toContain('sandbox');
     expect(sandboxResponse.headers()['content-security-policy']).toContain(`frame-ancestors ${trustedOrigin}`);
 
-    const publicResponse = await request.get(`${publicOrigin}/does-not-exist`);
+    const publicResponse = await request.get(`${publicOrigin}/subscription/Hkj1vCoJb`);
+    expect(publicResponse.status()).toBe(200);
     expect(publicResponse.headers()['content-security-policy']).toContain('frame-ancestors \'none\'');
     expect(publicResponse.headers()['x-frame-options']).toBe('DENY');
 });

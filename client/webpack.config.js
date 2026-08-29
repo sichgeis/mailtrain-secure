@@ -4,6 +4,10 @@ const path = require('path');
 
 module.exports = {
     mode: 'development',
+    // Webpack's development default uses eval(), which is incompatible with
+    // Mailtrain's Content-Security-Policy. Keep readable development output
+    // without requiring the unsafe-eval CSP escape hatch.
+    devtool: false,
     entry: {
         "root": ['./src/root.js'],
         "mosaico-root": ['./src/lib/sandboxed-mosaico-root.js'],
