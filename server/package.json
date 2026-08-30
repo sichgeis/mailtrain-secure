@@ -97,7 +97,7 @@
     "mysql2": "3.24.2",
     "nanoid": "3.3.18",
     "node-ipc": "^9.1.1",
-    "node-mocks-http": "^1.8.1",
+    "node-mocks-http": "^1.18.1",
     "node-object-hash": "^1.4.1",
     "nodeify": "^1.0.1",
     "nodemailer": "9.0.6",
