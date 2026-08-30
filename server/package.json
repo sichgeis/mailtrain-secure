@@ -15,7 +15,7 @@
     "starttest": "NODE_ENV=test node index.js",
     "_e2e": "NODE_ENV=test node test/e2e/index.js",
     "e2e": "npm run test:playwright",
-    "lint:harness": "eslint lib/admin-bootstrap.js lib/auth-security.js lib/aws-ses-transport.js lib/browser-security.js lib/geoip.js lib/html-sanitizer.js lib/log-redaction.js lib/mailgun-upload.js lib/openpgp-encrypt.js lib/outbound-fetch.js lib/rate-limit.js lib/report-execution-policy.js lib/request-rate-limiters.js lib/restricted-token-store.js lib/runtime-schema.js lib/safe-path.js lib/secret-envelope.js lib/secret-migration.js lib/secret-storage.js lib/session-security.js lib/test-database-safety.js lib/token-hash.js lib/upload-limits.js lib/user-agent.js lib/webhook-delivery-ledger.js lib/webhook-security.js routes/campaigns.js setup/security/*.js setup/validate-admin-password.js setup/validate-session-secret.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
+    "lint:harness": "eslint lib/admin-bootstrap.js lib/auth-security.js lib/aws-ses-transport.js lib/browser-security.js lib/cas-auth.js lib/external-auth-adapter.js lib/geoip.js lib/html-sanitizer.js lib/log-redaction.js lib/mailgun-upload.js lib/openpgp-encrypt.js lib/outbound-fetch.js lib/rate-limit.js lib/report-execution-policy.js lib/request-rate-limiters.js lib/restricted-token-store.js lib/runtime-schema.js lib/safe-path.js lib/secret-envelope.js lib/secret-migration.js lib/secret-storage.js lib/session-security.js lib/test-database-safety.js lib/token-hash.js lib/upload-limits.js lib/user-agent.js lib/webhook-delivery-ledger.js lib/webhook-security.js routes/campaigns.js setup/security/*.js setup/validate-admin-password.js setup/validate-session-secret.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
     "test": "npm run test:fast",
     "test:fast": "node --test test/harness/*.test.js test/security/*.test.js",
     "test:coverage": "c8 --reporter=text --reporter=lcov npm run test:fast",
@@ -49,6 +49,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "3.1121.0",
+    "@coursetable/passport-cas": "0.1.4",
+    "@xmldom/xmldom": "0.9.12",
     "bcryptjs": "3.0.3",
     "bluebird": "^3.7.2",
     "body-parser": "1.20.6",
@@ -104,6 +106,8 @@
     "npmlog": "^4.1.2",
     "openpgp": "6.3.1",
     "passport": "0.7.0",
+    "passport-ldapauth": "3.0.1",
+    "passport-ldapjs": "2.0.0",
     "passport-local": "^1.0.0",
     "serve-favicon": "^2.5.0",
     "slugify": "^1.3.6",
@@ -111,7 +115,6 @@
     "tmp-promise": "3.0.3",
     "toml": "^2.3.3",
     "try-require": "^1.2.1",
-    "@xmldom/xmldom": "0.9.12",
     "ua-parser-js": "2.0.10"
   },
   "overrides": {

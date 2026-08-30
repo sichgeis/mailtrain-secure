@@ -15,6 +15,8 @@ const { nodeifyFunction, nodeifyPromise } = require('./nodeify');
 const interoperableErrors = require('../../shared/interoperable-errors');
 const contextHelpers = require('./context-helpers');
 const {extractAccessToken} = require('./auth-security');
+const {loadExternalAuthAdapter} = require('./external-auth-adapter');
+const {getCasLogoutUrl, normalizeCasProfile} = require('./cas-auth');
 
 let authMode = 'local';
 
@@ -23,50 +25,53 @@ let ldapStrategyOpts;
 if (config.ldap.enabled) {
     const ldapProtocol = config.ldap.secure ? 'ldaps' : 'ldap';
     if (!config.ldap.method || config.ldap.method === 'ldapjs') {
-        try {
-            LdapStrategy = require('passport-ldapjs').Strategy; // eslint-disable-line global-require
-            authMode = 'ldap';
-            log.info('LDAP', 'Found module "passport-ldapjs". It will be used for LDAP auth.');
+        LdapStrategy = loadExternalAuthAdapter({
+            adapterName: 'LDAP',
+            packageName: 'passport-ldapjs'
+        });
+        authMode = 'ldap';
+        log.info('LDAP', 'Using the bundled "passport-ldapjs" authentication adapter.');
 
-            ldapStrategyOpts = {
-                server: {
-                    url: ldapProtocol + '://' + config.ldap.host + ':' + config.ldap.port
-                },
-                base: config.ldap.baseDN,
-                search: {
-                    filter: config.ldap.filter,
-                    attributes: [config.ldap.uidTag, config.ldap.nameTag, config.ldap.mailTag],
-                    scope: 'sub'
-                },
-                uidTag: config.ldap.uidTag,
-                bindUser: config.ldap.bindUser,
-                bindPassword: config.ldap.bindPassword
-            };
-
-        } catch (exc) {
-            log.info('LDAP', 'Module "passport-ldapjs" not installed. It will not be used for LDAP auth.');
-        }
+        ldapStrategyOpts = {
+            server: {
+                url: ldapProtocol + '://' + config.ldap.host + ':' + config.ldap.port
+            },
+            base: config.ldap.baseDN,
+            search: {
+                filter: config.ldap.filter,
+                attributes: [config.ldap.uidTag, config.ldap.nameTag, config.ldap.mailTag],
+                scope: 'sub'
+            },
+            uidTag: config.ldap.uidTag,
+            bindUser: config.ldap.bindUser,
+            bindPassword: config.ldap.bindPassword
+        };
     }
 
     if (!LdapStrategy && (!config.ldap.method || config.ldap.method === 'ldapauth')) {
-        try {
-            LdapStrategy = require('passport-ldapauth').Strategy; // eslint-disable-line global-require
-            authMode = 'ldapauth';
-            log.info('LDAP', 'Found module "passport-ldapauth". It will be used for LDAP auth.');
+        LdapStrategy = loadExternalAuthAdapter({
+            adapterName: 'LDAP',
+            packageName: 'passport-ldapauth'
+        });
+        authMode = 'ldapauth';
+        log.info('LDAP', 'Using the bundled "passport-ldapauth" authentication adapter.');
 
-            ldapStrategyOpts = {
-                server: {
-                    url: ldapProtocol + '://' + config.ldap.host + ':' + config.ldap.port,
-                    searchBase: config.ldap.baseDN,
-                    searchFilter: config.ldap.filter,
-                    searchAttributes: [config.ldap.uidTag, config.ldap.nameTag, config.ldap.mailTag],
-                    bindDN: config.ldap.bindUser,
-                    bindCredentials: config.ldap.bindPassword
-                },
-            };
-        } catch (exc) {
-            log.info('LDAP', 'Module "passport-ldapauth" not installed. It will not be used for LDAP auth.');
-        }
+        ldapStrategyOpts = {
+            server: {
+                url: ldapProtocol + '://' + config.ldap.host + ':' + config.ldap.port,
+                searchBase: config.ldap.baseDN,
+                searchFilter: config.ldap.filter,
+                searchAttributes: [config.ldap.uidTag, config.ldap.nameTag, config.ldap.mailTag],
+                bindDN: config.ldap.bindUser,
+                bindCredentials: config.ldap.bindPassword
+            },
+        };
+    }
+
+    if (!LdapStrategy) {
+        const error = new Error(`Unsupported LDAP authentication method: ${config.ldap.method}`);
+        error.code = 'EEXTERNALAUTH';
+        throw error;
     }
 }
 
@@ -231,27 +236,25 @@ module.exports.regenerateAuthenticatedSession = (req, res, next) => {
 };
 let CasStrategy;
 if (config.cas && config.cas.enabled === true) {
-  try {
-    CasStrategy = require('passport-cas2').Strategy;
+    CasStrategy = loadExternalAuthAdapter({
+        adapterName: 'CAS',
+        packageName: '@coursetable/passport-cas'
+    });
     authMode = 'cas';
-    log.info('CAS', 'Found module "passport-cas2". It will be used for CAS auth.');
-  } catch (exc) {
-    log.info('CAS', 'Module passport-cas2 not installed.');
-  }
+    log.info('CAS', 'Using the bundled CAS authentication adapter.');
 }
 if (CasStrategy) {
-    log.info('Using CAS auth (passport-cas2)');
+    log.info('Using CAS auth');
     module.exports.authMethod = 'cas';
     module.exports.isAuthMethodLocal = false;
 
     const cas = new CasStrategy({
-        casURL: config.cas.url,
-        propertyMap: {
-            displayName: config.cas.nameTag,
-            emails: config.cas.mailTag
-        }
+        version: 'CAS2.0',
+        ssoBaseURL: config.cas.url.replace(/\/+$/, '')
     }, 
-    nodeifyFunction(async (username, profile) => { 
+    nodeifyFunction(async casProfile => {
+      const profile = normalizeCasProfile(casProfile, config.cas);
+      const username = profile.username;
       try {
         const user = await users.getByUsername(username);
 
@@ -260,7 +263,7 @@ if (CasStrategy) {
             id: user.id,
             username: username,
             name: profile.displayName,
-            email: profile.emails[0].value,
+            email: profile.email,
             role: user.role
         };
       } catch (err) {
@@ -270,7 +273,7 @@ if (CasStrategy) {
                 role: config.cas.newUserRole,
                 namespace: config.cas.newUserNamespaceId,
                 name: profile.displayName,
-                email: profile.emails[0].value
+                email: profile.email
             });
             log.info('CAS', 'New user provisioned through CAS');
 
@@ -301,13 +304,13 @@ if (CasStrategy) {
                     return next(err);
                 }
                 clearSessionCookies(res);
-                cas.logout(req, res, config.www.trustedUrlBase+'/?cas-logout-success');
+                res.redirect(307, getCasLogoutUrl(config.cas.url, config.www.trustedUrlBase+'/?cas-logout-success'));
             });
         });
     };
 
 } else if (LdapStrategy) {
-    log.info('Using LDAP auth (passport-' + authMode === 'ldap' ? 'ldapjs' : authMode + ')');
+    log.info('Using LDAP auth (passport-%s)', authMode === 'ldap' ? 'ldapjs' : authMode);
     module.exports.authMethod = 'ldap';
     module.exports.isAuthMethodLocal = false;
 

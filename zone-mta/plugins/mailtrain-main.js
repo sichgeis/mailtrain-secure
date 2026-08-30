@@ -29,11 +29,15 @@ module.exports.init = (app, done) => {
 
         const notifyBounce = () => {
             let returned = false;
+            const headers = {
+                Authorization: `Bearer ${app.config.bounceToken}`
+            };
+            if (app.config.bounceHost) {
+                headers.Host = app.config.bounceHost;
+            }
             const stream = require('nodemailer/lib/fetch')(app.config.bounceUrl, {
                 body,
-                headers: {
-                    Authorization: `Bearer ${app.config.bounceToken}`
-                }
+                headers
             });
 
             stream.on('readable', () => {

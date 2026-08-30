@@ -135,6 +135,58 @@ test('main plugin refuses unauthenticated bounce callbacks', () => {
     assert.match(errors[0][1], /not configured/);
 });
 
+test('main plugin authenticates internal bounce callbacks with the configured trusted host', async t => {
+    let resolveRequest;
+    let rejectRequest;
+    const receivedRequest = new Promise((resolve, reject) => {
+        resolveRequest = resolve;
+        rejectRequest = reject;
+    });
+    const server = http.createServer((req, res) => {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.once('error', rejectRequest);
+        req.once('end', () => {
+            resolveRequest({
+                authorization: req.headers.authorization,
+                body: Buffer.concat(chunks).toString(),
+                host: req.headers.host
+            });
+            res.writeHead(200);
+            res.end('ok');
+        });
+    });
+    await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    t.after(() => server.close());
+
+    const {port} = server.address();
+    const {hooks} = initialize(mainPlugin, {
+        bounceHost: 'mail.example.test',
+        bounceToken: 'synthetic-bounce-token',
+        bounceUrl: `http://127.0.0.1:${port}/webhooks/zone-mta`
+    });
+    const completed = new Promise(resolve => {
+        hooks.get('queue:bounce')({
+            category: 'recipient',
+            from: 'sender@example.test',
+            headers: {getFirst: () => null},
+            id: 'message.1',
+            response: '550 rejected',
+            seq: 1,
+            time: Date.now(),
+            to: 'recipient@example.test'
+        }, {}, resolve);
+    });
+
+    const [request] = await Promise.all([receivedRequest, completed]);
+    assert.equal(request.host, 'mail.example.test');
+    assert.equal(request.authorization, 'Bearer synthetic-bounce-token');
+    assert.match(request.body, /message\.1/);
+});
+
 test('receiver plugin accepts only the configured SMTP credential pair', () => {
     const { hooks } = initialize(receiverPlugin, {
         username: 'mailer',
