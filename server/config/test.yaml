@@ -18,6 +18,11 @@ builtinZoneMTA:
 reports:
   enabled: false
 
+mosaico:
+  fileCache:
+    images:
+      pruneInterval: 1
+
 www:
   host: 127.0.0.1
   trustedPort: 3000

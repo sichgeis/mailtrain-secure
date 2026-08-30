@@ -1,10 +1,17 @@
 'use strict';
 
 const {expect, test} = require('@playwright/test');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const knex = require('../../lib/knex');
 
 const trustedOrigin = process.env.MAILTRAIN_TRUSTED_ORIGIN || 'http://127.0.0.1:3000';
 const sandboxOrigin = process.env.MAILTRAIN_SANDBOX_ORIGIN || 'http://127.0.0.1:3003';
 const publicOrigin = process.env.MAILTRAIN_PUBLIC_ORIGIN || 'http://127.0.0.1:3004';
+
+test.afterAll(async () => {
+    await knex.destroy();
+});
 
 test('trusted login is reachable only from the trusted origin', async ({request}) => {
     const trustedLogin = await request.get(`${trustedOrigin}/login`);
@@ -158,4 +165,35 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
     await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
     expect(dialogs).not.toContain('Update your browser!');
+});
+
+test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {
+    const cacheType = 'mosaico-images';
+    const params = '37,19';
+    const cacheKey = `placeholder_${params}`;
+    const cacheDir = path.join(__dirname, '..', '..', 'files', 'cache', cacheType);
+
+    await knex('file_cache').where({type: cacheType, key: cacheKey}).del();
+    await fs.mkdir(cacheDir, {recursive: true});
+
+    const response = await request.get(`${trustedOrigin}/mosaico/img?method=placeholder&params=${params}`);
+    expect(response.status()).toBe(200);
+    expect((await response.body()).length).toBeGreaterThan(0);
+
+    // The legacy writer intentionally waits five seconds before finalizing. Wait
+    // through that delay and at least one one-second test reconciliation pass.
+    await new Promise(resolve => setTimeout(resolve, 7000));
+
+    const row = await knex('file_cache').where({type: cacheType, key: cacheKey}).first();
+    expect(row).toBeDefined();
+
+    const cachedFile = path.join(cacheDir, row.id.toString());
+    expect((await fs.stat(cachedFile)).size).toBeGreaterThan(0);
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    expect(await knex('file_cache').where({id: row.id}).first()).toBeDefined();
+    expect((await fs.stat(cachedFile)).size).toBeGreaterThan(0);
+
+    await knex('file_cache').where({id: row.id}).del();
+    await fs.unlink(cachedFile);
 });
