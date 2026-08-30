@@ -89,3 +89,14 @@ test('reports are disabled in the default application configuration', () => {
     assert.equal(defaults.reports.enabled, false);
     assert.equal(defaults.reports.unsafeJavaScriptExecution, false);
 });
+
+test('campaign uploads and OpenPGP buffering have explicit production bounds', () => {
+    const defaults = yaml.safeLoad(fs.readFileSync(path.join(repositoryRoot, 'server/config/default.yaml'), 'utf8'));
+    const uploads = fs.readFileSync(path.join(repositoryRoot, 'server/lib/file-helpers.js'), 'utf8');
+    const mailers = fs.readFileSync(path.join(repositoryRoot, 'server/lib/mailers.js'), 'utf8');
+    assert.ok(defaults.security.uploads.maxFileSizeBytes > 0);
+    assert.ok(defaults.security.uploads.maxFiles > 0);
+    assert.ok(defaults.security.openPgp.maxMessageBytes > defaults.security.uploads.maxFileSizeBytes);
+    assert.match(uploads, /limits:/);
+    assert.match(mailers, /maxMessageBytes/);
+});

@@ -165,11 +165,13 @@ test('stored HTML sanitization removes active content while preserving email lay
     assert.match(clean, /href="https:\/\/safe\.example\/path"/);
     assert.match(clean, /rel="noopener noreferrer"/);
 
-    const fullDocument = sanitizeUntrustedHtml('<!doctype html><html><head><style>body{color:red}</style><script>x</script></head><body><table><tr><td>Kept</td></tr></table></body></html>');
+    const fullDocument = sanitizeUntrustedHtml('<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>@media (max-width:600px){.column{display:block}}</style><style>@import "https://evil.test/x.css"</style><script>x</script></head><body><table><tr><td>Kept</td></tr></table></body></html>');
     assert.match(fullDocument, /<!DOCTYPE html>/i);
     assert.match(fullDocument, /<\/body><\/html>/i);
     assert.match(fullDocument, /<td>Kept<\/td>/);
-    assert.doesNotMatch(fullDocument, /<script|<style/i);
+    assert.match(fullDocument, /<meta name="viewport" content="width=device-width">/i);
+    assert.match(fullDocument, /<style>@media \(max-width:600px\)\{\.column\{display:block\}\}<\/style>/i);
+    assert.doesNotMatch(fullDocument, /<script|@import|evil\.test/i);
 });
 
 test('log redaction removes URL, header, email, form, and reset-token canaries', () => {
@@ -308,6 +310,7 @@ test('application boundaries wire security helpers and remove trusted-DOM report
     assert.match(appBuilder, /buildSessionOptions/);
     assert.match(archive, /sanitizeUntrustedHtml/);
     assert.match(campaigns, /sanitizeUntrustedHtml/);
+    assert.match(campaigns, /require\(['"]\.\.\/lib\/urls['"]\)/);
     assert.match(account, /accountRateLimiters/);
     assert.match(account, /\.\.\.accountRateLimiters\.login/);
     assert.match(account, /\.\.\.accountRateLimiters\.passwordReset/);

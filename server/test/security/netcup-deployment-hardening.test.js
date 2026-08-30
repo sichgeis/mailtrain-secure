@@ -2,10 +2,13 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const childProcess = require('node:child_process');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const yaml = require('js-yaml');
 const {assertRuntimeSchemaCurrent} = require('../../lib/runtime-schema');
+const {validateSessionSecurity} = require('../../lib/session-security');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const deploymentRoot = path.join(repositoryRoot, 'deploy/netcup');
@@ -113,10 +116,46 @@ test('datastore credentials, TLS, and database duties are separated', () => {
 });
 
 test('rendered app configuration enables production-safe session cookies', () => {
-    const renderer = read('render-config.js');
-    assert.match(renderer, /configuration\.security\.sessions\s*=\s*\{/);
-    assert.match(renderer, /name:\s*['"]__Host-mailtrain\.sid['"]/);
-    assert.match(renderer, /secure:\s*true/);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-render-config-'));
+    const secretFile = path.join(directory, 'secret');
+    const caFile = path.join(directory, 'db-ca');
+    fs.writeFileSync(secretFile, '0123456789abcdef0123456789abcdef');
+    fs.writeFileSync(caFile, 'synthetic-ca');
+    const result = childProcess.spawnSync(process.execPath, [path.join(deploymentRoot, 'render-config.js')], {
+        env: {
+            ...process.env,
+            MAILTRAIN_MODE: 'app',
+            MAILTRAIN_DB_HOST: 'database',
+            MAILTRAIN_DB_NAME: 'mailtrain',
+            MAILTRAIN_DB_USER: 'mailtrain',
+            MAILTRAIN_DB_SECRET_FILE: secretFile,
+            MAILTRAIN_DB_CA_FILE: caFile,
+            MAILTRAIN_SESSION_SECRET_FILE: secretFile,
+            MAILTRAIN_REDIS_SECRET_FILE: secretFile,
+            MAILTRAIN_MONGO_SECRET_FILE: secretFile,
+            MAILTRAIN_MONGO_USER: 'mailtrain',
+            MAILTRAIN_TRUSTED_HOST: 'trusted.example.test',
+            MAILTRAIN_SANDBOX_HOST: 'sandbox.example.test',
+            MAILTRAIN_PUBLIC_HOST: 'public.example.test',
+            MAILTRAIN_CONFIG_OUTPUT_DIR: directory
+        },
+        encoding: 'utf8'
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const rendered = JSON.parse(fs.readFileSync(path.join(directory, 'production.json')));
+    validateSessionSecurity({secret: rendered.www.secret, ...rendered.security.sessions}, {production: true});
+    fs.rmSync(directory, {recursive: true, force: true});
+});
+
+test('Netcup upgrade path runs secret migration dry-run, migrate, and verify before runtime', () => {
+    const compose = yaml.safeLoad(read('compose.yml'));
+    assert.deepEqual(compose.services['secret-migrate'].profiles, ['migration']);
+    assert.equal(compose.services['secret-migrate'].environment.MAILTRAIN_MODE, 'secrets');
+    const runbook = read('README.md');
+    for (const mode of ['dry-run', 'migrate', 'verify']) {
+        assert.match(runbook, new RegExp(`secret-migrate ${mode}`));
+    }
+    assert.match(read('mailtrain-entrypoint.sh'), /security\/secret-migration\.js/);
 });
 
 test('production images install at build time and run Mailtrain as non-root', () => {

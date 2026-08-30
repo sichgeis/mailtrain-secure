@@ -89,3 +89,14 @@ test('local OpenPGP adapter fails closed for an invalid signing-key passphrase',
         /passphrase|decrypt/i
     );
 });
+
+test('local OpenPGP adapter rejects oversized messages without retaining more chunks', async () => {
+    const transform = new OpenPgpTransform({maxMessageBytes: 32});
+    const error = await new Promise(resolve => {
+        transform.once('error', resolve);
+        transform.write(Buffer.alloc(24));
+        transform.write(Buffer.alloc(24));
+    });
+    assert.equal(error.code, 'EPGPMESSAGESIZE');
+    assert.ok(transform.length <= 32);
+});

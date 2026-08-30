@@ -69,6 +69,30 @@ test('AWS SNS requires a valid signature, allowed topic, fresh timestamp, and on
     await assert.rejects(() => verifyAwsSnsMessage(null, options), /type/i);
 });
 
+test('replay reservations retry after failure, deduplicate success, and preserve lease ownership', async () => {
+    let now = 1000;
+    const cache = new ReplayCache({now: () => now});
+    const first = cache.reserve('provider:delivery', 100);
+    await assert.rejects(() => first.run(async () => {
+        throw new Error('synthetic downstream failure');
+    }), /downstream/);
+
+    const retry = cache.reserve('provider:delivery', 100);
+    let mutations = 0;
+    await retry.run(async () => mutations++);
+    const duplicate = cache.reserve('provider:delivery', 100);
+    await duplicate.run(async () => mutations++);
+    assert.equal(mutations, 1);
+    assert.equal(duplicate.completed, true);
+
+    const expired = cache.reserve('provider:lease-race', 100);
+    now += 101;
+    const replacement = cache.reserve('provider:lease-race', 100);
+    expired.rollback();
+    assert.throws(() => cache.reserve('provider:lease-race', 100), /processing/i);
+    replacement.rollback();
+});
+
 test('AWS confirmation permits only signed SNS HTTPS destinations and never follows redirects', async () => {
     const calls = [];
     await assert.doesNotReject(() => confirmAwsSnsSubscription({
@@ -182,6 +206,13 @@ test('ZoneMTA bounce and DKIM credentials are accepted only from headers', () =>
     assert.match(builtinZoneMta, /bounceToken/);
     assert.match(zoneMtaPlugin, /Authorization/);
     assert.match(zoneMtaPlugin, /Bearer/);
+
+    const proxy = yaml.safeLoad(fs.readFileSync(path.join(repositoryRoot, 'deploy/netcup/traefik-dynamic.yml'), 'utf8'));
+    const internalRouter = proxy.http.routers['mailtrain-zone-mta-internal'];
+    assert.match(internalRouter.rule, /PathPrefix\(`\/webhooks\/zone-mta`\)/);
+    assert.ok(internalRouter.priority > (proxy.http.routers['mailtrain-trusted'].priority || 0));
+    assert.deepEqual(internalRouter.middlewares, ['mailtrain-zone-mta-internal-only']);
+    assert.deepEqual(proxy.http.middlewares['mailtrain-zone-mta-internal-only'].ipAllowList.sourceRange, ['127.0.0.0/8', '::1/128']);
 });
 
 test('body parsing and webhook defaults are bounded and fail closed', () => {
