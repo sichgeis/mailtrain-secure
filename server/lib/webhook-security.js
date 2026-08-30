@@ -42,22 +42,76 @@ class ReplayCache {
         this.entries = new Map();
     }
 
-    assertUnused(key, ttlMs = defaultReplayWindowMs) {
-        const currentTime = this.now();
-        for (const [entryKey, expiresAt] of this.entries) {
-            if (expiresAt <= currentTime) {
+    _purgeExpired(currentTime) {
+        for (const [entryKey, entry] of this.entries) {
+            if (entry.expiresAt <= currentTime) {
                 this.entries.delete(entryKey);
             }
         }
+    }
 
-        if (this.entries.has(key)) {
-            throw securityError('Webhook replay detected');
+    reserve(key, ttlMs = defaultReplayWindowMs) {
+        const currentTime = this.now();
+        this._purgeExpired(currentTime);
+
+        const existing = this.entries.get(key);
+        if (existing) {
+            if (existing.state === 'completed') {
+                return this._reservation(key, existing, true);
+            }
+            throw securityError('Webhook replay is already processing', 409);
         }
         if (this.entries.size >= this.maxEntries) {
             throw securityError('Webhook replay cache capacity exceeded', 503);
         }
 
-        this.entries.set(key, currentTime + ttlMs);
+        const entry = {
+            leaseId: crypto.randomBytes(16).toString('hex'),
+            state: 'processing',
+            expiresAt: currentTime + ttlMs
+        };
+        this.entries.set(key, entry);
+        return this._reservation(key, entry, false);
+    }
+
+    _reservation(key, entry, completed) {
+        const cache = this;
+        return {
+            completed,
+            commit() {
+                const current = cache.entries.get(key);
+                if (current === entry && current.leaseId === entry.leaseId) {
+                    current.state = 'completed';
+                }
+            },
+            rollback() {
+                const current = cache.entries.get(key);
+                if (current === entry && current.leaseId === entry.leaseId && current.state === 'processing') {
+                    cache.entries.delete(key);
+                }
+            },
+            async run(handler) {
+                if (completed) {
+                    return undefined;
+                }
+                try {
+                    const result = await handler();
+                    this.commit();
+                    return result;
+                } catch (err) {
+                    this.rollback();
+                    throw err;
+                }
+            }
+        };
+    }
+
+    assertUnused(key, ttlMs = defaultReplayWindowMs) {
+        const reservation = this.reserve(key, ttlMs);
+        if (reservation.completed) {
+            throw securityError('Webhook replay detected');
+        }
+        reservation.commit();
     }
 }
 
@@ -121,9 +175,7 @@ function verifyMailgunSignature(payload, {
     if (!secureEqual(signature.toLowerCase(), expected)) {
         throw securityError('Mailgun webhook signature is invalid');
     }
-    if (replayCache) {
-        replayCache.assertUnused(`mailgun:${token}`, maxClockSkewMs);
-    }
+    return replayCache ? replayCache.reserve(`mailgun:${token}`, maxClockSkewMs) : null;
 }
 
 function verifySendGridSignature({rawBody, timestamp, signature}, {
@@ -149,9 +201,7 @@ function verifySendGridSignature({rawBody, timestamp, signature}, {
     if (!valid) {
         throw securityError('SendGrid webhook signature is invalid');
     }
-    if (replayCache) {
-        replayCache.assertUnused(`sendgrid:${signature}`, maxClockSkewMs);
-    }
+    return replayCache ? replayCache.reserve(`sendgrid:${signature}`, maxClockSkewMs) : null;
 }
 
 function verifyPostalSignature({rawBody, signature, keyId, timestamp}, {
@@ -181,9 +231,7 @@ function verifyPostalSignature({rawBody, signature, keyId, timestamp}, {
     if (!valid) {
         throw securityError('Postal webhook signature is invalid');
     }
-    if (replayCache) {
-        replayCache.assertUnused(`postal:${signature}`, maxClockSkewMs);
-    }
+    return replayCache ? replayCache.reserve(`postal:${signature}`, maxClockSkewMs) : null;
 }
 
 function parseAwsTopicArn(topicArn) {
@@ -254,9 +302,7 @@ async function verifyAwsSnsMessage(message, {
     if (!valid) {
         throw securityError('AWS SNS signature is invalid');
     }
-    if (replayCache) {
-        replayCache.assertUnused(`aws:${message.MessageId}`, maxClockSkewMs);
-    }
+    return replayCache ? replayCache.reserve(`aws:${message.MessageId}`, maxClockSkewMs) : null;
 }
 
 async function confirmAwsSnsSubscription(message, {request, timeout = 5000}) {

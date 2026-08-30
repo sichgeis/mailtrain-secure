@@ -1,5 +1,12 @@
 http:
   routers:
+    mailtrain-zone-mta-internal:
+      rule: Host(`__TRUSTED_HOST__`) && PathPrefix(`/webhooks/zone-mta`)
+      entryPoints: [websecure]
+      priority: 200
+      middlewares: [mailtrain-zone-mta-internal-only]
+      service: mailtrain-trusted
+      tls: {certResolver: letsencrypt}
     mailtrain-mailgun:
       rule: Host(`__TRUSTED_HOST__`) && PathPrefix(`/webhooks/mailgun`)
       entryPoints: [websecure]
@@ -25,6 +32,10 @@ http:
       middlewares: [mailtrain-request-limit, mailtrain-browser-security]
       service: mailtrain-public
       tls: {certResolver: letsencrypt}
+  middlewares:
+    mailtrain-zone-mta-internal-only:
+      ipAllowList:
+        sourceRange: [127.0.0.0/8, "::1/128"]
   services:
     mailtrain-trusted:
       loadBalancer:

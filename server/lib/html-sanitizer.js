@@ -3,7 +3,7 @@
 const {JSDOM} = require('jsdom');
 
 const removedElements = new Set([
-    'script', 'iframe', 'object', 'embed', 'svg', 'math', 'meta', 'base', 'link', 'style',
+    'script', 'iframe', 'object', 'embed', 'svg', 'math', 'base', 'link',
     'form', 'input', 'button', 'textarea', 'select', 'option', 'video', 'audio', 'source'
 ]);
 const urlAttributes = new Set(['href', 'src', 'poster', 'background', 'action', 'formaction', 'xlink:href']);
@@ -33,12 +33,38 @@ function sanitizeStyle(value) {
         .join('; ');
 }
 
+function sanitizeStyleSheet(value) {
+    const stylesheet = String(value || '').trim();
+    if (!stylesheet || /@import|url\s*\(|expression\s*\(|behavior\s*:|-moz-binding|javascript\s*:|data\s*:/i.test(stylesheet)) {
+        return '';
+    }
+    return stylesheet;
+}
+
+function isSafeViewportMeta(element) {
+    return element.getAttribute('name') && element.getAttribute('name').toLowerCase() === 'viewport' &&
+        /^[a-z0-9 .,_=;-]+$/i.test(element.getAttribute('content') || '');
+}
+
 function sanitizeUntrustedHtml(html) {
     const source = String(html || '');
     const fullDocument = /<(?:!doctype|html|head|body)\b/i.test(source);
     const dom = new JSDOM(fullDocument ? source : `<!doctype html><body>${source}</body>`);
     const document = dom.window.document;
     for (const element of Array.from(document.querySelectorAll('*'))) {
+        if (element.localName === 'meta' && !isSafeViewportMeta(element)) {
+            element.remove();
+            continue;
+        }
+        if (element.localName === 'style') {
+            const stylesheet = sanitizeStyleSheet(element.textContent);
+            if (!stylesheet) {
+                element.remove();
+            } else {
+                element.textContent = stylesheet;
+            }
+            continue;
+        }
         if (removedElements.has(element.localName)) {
             element.remove();
             continue;

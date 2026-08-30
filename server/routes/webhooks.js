@@ -66,6 +66,10 @@ function parseJsonBody(body) {
     }
 }
 
+async function runReplayProtected(reservation, handler) {
+    return reservation ? reservation.run(handler) : handler();
+}
+
 async function fetchAwsCertificate(uri) {
     if (awsCertificates.has(uri)) {
         return awsCertificates.get(uri);
@@ -100,67 +104,69 @@ router.postAsync('/aws', webhookRateLimiters.aws, async (req, res) => {
     assertProviderEnabled(webhookConfig.aws);
     req.body = parseJsonBody(req.body);
 
-    await verifyAwsSnsMessage(req.body, {
+    const replayReservation = await verifyAwsSnsMessage(req.body, {
         topicArns: webhookConfig.aws.topicArns,
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
         replayCache: awsReplayCache,
         fetchCertificate: fetchAwsCertificate
     });
 
-    switch (req.body.Type) {
+    await runReplayProtected(replayReservation, async () => {
+        switch (req.body.Type) {
 
-        case 'SubscriptionConfirmation':
-            if (req.body.SubscribeURL) {
-                await confirmAwsSnsSubscription(req.body, {
-                    request: async options => {
-                        const response = await outboundFetch(options.uri, {
-                            method: options.method,
-                            timeoutMs: options.timeout,
-                            maxRedirects: 0,
-                            maxResponseSize: 65536
-                        });
-                        if (response.statusCode < 200 || response.statusCode >= 300) {
-                            const error = new Error('AWS SNS subscription confirmation request failed');
-                            error.status = 400;
-                            throw error;
-                        }
-                        return response;
-                    },
-                    timeout: webhookConfig.aws.confirmationTimeoutMs
-                });
-                break;
-            } else {
-                const err = new Error('SubscribeURL not set');
-                err.status = 400;
-                throw err;
-            }
+            case 'SubscriptionConfirmation':
+                if (req.body.SubscribeURL) {
+                    await confirmAwsSnsSubscription(req.body, {
+                        request: async options => {
+                            const response = await outboundFetch(options.uri, {
+                                method: options.method,
+                                timeoutMs: options.timeout,
+                                maxRedirects: 0,
+                                maxResponseSize: 65536
+                            });
+                            if (response.statusCode < 200 || response.statusCode >= 300) {
+                                const error = new Error('AWS SNS subscription confirmation request failed');
+                                error.status = 400;
+                                throw error;
+                            }
+                            return response;
+                        },
+                        timeout: webhookConfig.aws.confirmationTimeoutMs
+                    });
+                    break;
+                } else {
+                    const err = new Error('SubscribeURL not set');
+                    err.status = 400;
+                    throw err;
+                }
 
-        case 'Notification':
-            if (req.body.Message) {
-                req.body.Message = parseJsonBody(req.body.Message);
+            case 'Notification':
+                if (req.body.Message) {
+                    req.body.Message = parseJsonBody(req.body.Message);
 
-                if (req.body.Message.mail && req.body.Message.mail.messageId) {
-                    const message = await campaigns.getMessageByResponseId(req.body.Message.mail.messageId);
+                    if (req.body.Message.mail && req.body.Message.mail.messageId) {
+                        const message = await campaigns.getMessageByResponseId(req.body.Message.mail.messageId);
 
-                    if (message) {
-                        switch (req.body.Message.notificationType) {
-                            case 'Bounce':
-                                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.Message.bounce.bounceType === 'Permanent');
-                                log.verbose('AWS', 'Marked an authenticated provider event as bounced');
-                                break;
+                        if (message) {
+                            switch (req.body.Message.notificationType) {
+                                case 'Bounce':
+                                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.Message.bounce.bounceType === 'Permanent');
+                                    log.verbose('AWS', 'Marked an authenticated provider event as bounced');
+                                    break;
 
-                            case 'Complaint':
-                                if (req.body.Message.complaint) {
-                                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                                    log.verbose('AWS', 'Marked an authenticated provider event as complaint');
-                                }
-                                break;
+                                case 'Complaint':
+                                    if (req.body.Message.complaint) {
+                                        await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
+                                        log.verbose('AWS', 'Marked an authenticated provider event as complaint');
+                                    }
+                                    break;
+                            }
                         }
                     }
                 }
-            }
-            break;
-    }
+                break;
+        }
+    });
 
     res.json({
         success: true
@@ -177,46 +183,48 @@ router.postAsync('/sparkpost', webhookRateLimiters.sparkpost, async (req, res) =
         error.status = 400;
         throw error;
     }
-    sparkpostReplayCache.assertUnused(`sparkpost:${batchId}`, webhookConfig.maxClockSkewMs);
+    const replayReservation = sparkpostReplayCache.reserve(`sparkpost:${batchId}`, webhookConfig.maxClockSkewMs);
     const events = [].concat(req.body || []); // This is just a cryptic way getting an array regardless whether req.body is empty, one item, or array
 
-    for (const curEvent of events) {
-        let msys = curEvent && curEvent.msys;
-        let evt;
+    await runReplayProtected(replayReservation, async () => {
+        for (const curEvent of events) {
+            let msys = curEvent && curEvent.msys;
+            let evt;
 
-        if (msys && msys.message_event) {
-            evt = msys.message_event;
-        } else if (msys && msys.unsubscribe_event) {
-            evt = msys.unsubscribe_event;
-        } else {
-            continue;
-        }
+            if (msys && msys.message_event) {
+                evt = msys.message_event;
+            } else if (msys && msys.unsubscribe_event) {
+                evt = msys.unsubscribe_event;
+            } else {
+                continue;
+            }
 
-        log.verbose('Sparkpost', 'Received authenticated event type "%s"', evt.type);
+            log.verbose('Sparkpost', 'Received authenticated event type "%s"', evt.type);
 
-        const message = await campaigns.getMessageByCid(evt.campaign_id);
-        if (!message) {
-            continue;
-        }
+            const message = await campaigns.getMessageByCid(evt.campaign_id);
+            if (!message) {
+                continue;
+            }
 
-        switch (evt.type) {
-            case 'bounce':
+            switch (evt.type) {
+                case 'bounce':
                 // https://support.sparkpost.com/customer/portal/articles/1929896
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, [1, 10, 25, 30, 50].indexOf(Number(evt.bounce_class)) >= 0);
-                log.verbose('Sparkpost', 'Marked an authenticated provider event as bounced');
-                break;
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, [1, 10, 25, 30, 50].indexOf(Number(evt.bounce_class)) >= 0);
+                    log.verbose('Sparkpost', 'Marked an authenticated provider event as bounced');
+                    break;
 
-            case 'spam_complaint':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                log.verbose('Sparkpost', 'Marked an authenticated provider event as complaint');
-                break;
+                case 'spam_complaint':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
+                    log.verbose('Sparkpost', 'Marked an authenticated provider event as complaint');
+                    break;
 
-            case 'link_unsubscribe':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
-                log.verbose('Sparkpost', 'Marked an authenticated provider event as unsubscribed');
-                break;
+                case 'link_unsubscribe':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
+                    log.verbose('Sparkpost', 'Marked an authenticated provider event as unsubscribed');
+                    break;
+            }
         }
-    }
+    });
 
     return res.json({
         success: true
@@ -226,7 +234,7 @@ router.postAsync('/sparkpost', webhookRateLimiters.sparkpost, async (req, res) =
 
 router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => {
     assertProviderEnabled(webhookConfig.sendgrid);
-    verifySendGridSignature({
+    const replayReservation = verifySendGridSignature({
         rawBody: req.rawBody,
         timestamp: req.get('x-twilio-email-event-webhook-timestamp'),
         signature: req.get('x-twilio-email-event-webhook-signature')
@@ -237,37 +245,39 @@ router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => 
     });
     let events = [].concat(req.body || []);
 
-    for (const evt of events) {
-        if (!evt) {
-            continue;
-        }
+    await runReplayProtected(replayReservation, async () => {
+        for (const evt of events) {
+            if (!evt) {
+                continue;
+            }
 
-        log.verbose('Sendgrid', 'Received authenticated event type "%s"', evt.event);
+            log.verbose('Sendgrid', 'Received authenticated event type "%s"', evt.event);
 
-        const message = await campaigns.getMessageByCid(evt.campaign_id);
-        if (!message) {
-            continue;
-        }
+            const message = await campaigns.getMessageByCid(evt.campaign_id);
+            if (!message) {
+                continue;
+            }
 
-        switch (evt.event) {
-            case 'bounce':
+            switch (evt.event) {
+                case 'bounce':
                 // https://support.sparkpost.com/customer/portal/articles/1929896
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                log.verbose('Sendgrid', 'Marked an authenticated provider event as bounced');
-                break;
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
+                    log.verbose('Sendgrid', 'Marked an authenticated provider event as bounced');
+                    break;
 
-            case 'spamreport':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                log.verbose('Sendgrid', 'Marked an authenticated provider event as complaint');
-                break;
+                case 'spamreport':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
+                    log.verbose('Sendgrid', 'Marked an authenticated provider event as complaint');
+                    break;
 
-            case 'group_unsubscribe':
-            case 'unsubscribe':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
-                log.verbose('Sendgrid', 'Marked an authenticated provider event as unsubscribed');
-                break;
+                case 'group_unsubscribe':
+                case 'unsubscribe':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
+                    log.verbose('Sendgrid', 'Marked an authenticated provider event as unsubscribed');
+                    break;
+            }
         }
-    }
+    });
 
     return res.json({
         success: true
@@ -277,7 +287,7 @@ router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => 
 
 router.postAsync('/mailgun', webhookRateLimiters.mailgun, requireProvider(webhookConfig.mailgun), mailgunUpload, async (req, res) => {
     assertExpectedFields(req.body, mailgunFields);
-    verifyMailgunSignature(req.body, {
+    const replayReservation = verifyMailgunSignature(req.body, {
         signingKey: webhookConfig.mailgun.signingKey,
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
         replayCache: mailgunReplayCache
@@ -286,25 +296,27 @@ router.postAsync('/mailgun', webhookRateLimiters.mailgun, requireProvider(webhoo
 
     log.verbose('Mailgun', 'Received authenticated event type "%s"', evt.event);
 
-    const message = await campaigns.getMessageByCid([].concat(evt && evt.campaign_id || []).shift());
-    if (message) {
-        switch (evt.event) {
-            case 'bounced':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                log.verbose('Mailgun', 'Marked an authenticated provider event as bounced');
-                break;
+    await runReplayProtected(replayReservation, async () => {
+        const message = await campaigns.getMessageByCid([].concat(evt && evt.campaign_id || []).shift());
+        if (message) {
+            switch (evt.event) {
+                case 'bounced':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
+                    log.verbose('Mailgun', 'Marked an authenticated provider event as bounced');
+                    break;
 
-            case 'complained':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
-                log.verbose('Mailgun', 'Marked an authenticated provider event as complaint');
-                break;
+                case 'complained':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.COMPLAINED, true);
+                    log.verbose('Mailgun', 'Marked an authenticated provider event as complaint');
+                    break;
 
-            case 'unsubscribed':
-                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
-                log.verbose('Mailgun', 'Marked an authenticated provider event as unsubscribed');
-                break;
+                case 'unsubscribed':
+                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.UNSUBSCRIBED, true);
+                    log.verbose('Mailgun', 'Marked an authenticated provider event as unsubscribed');
+                    break;
+            }
         }
-    }
+    });
 
     return res.json({
         success: true
@@ -321,13 +333,15 @@ router.postAsync('/zone-mta', webhookRateLimiters.zoneMta, async (req, res) => {
     req.body = parseJsonBody(req.body);
 
     if (req.body.id) {
-        zoneMtaReplayCache.assertUnused(`zone-mta:${req.body.id}`, webhookConfig.maxClockSkewMs);
-        const message = await campaigns.getMessageByResponseId(req.body.id);
+        const replayReservation = zoneMtaReplayCache.reserve(`zone-mta:${req.body.id}`, webhookConfig.maxClockSkewMs);
+        await runReplayProtected(replayReservation, async () => {
+            const message = await campaigns.getMessageByResponseId(req.body.id);
 
-        if (message) {
-            await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-            log.verbose('ZoneMTA', 'Marked an authenticated provider event as bounced');
-        }
+            if (message) {
+                await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
+                log.verbose('ZoneMTA', 'Marked an authenticated provider event as bounced');
+            }
+        });
     }
 
     res.json({
@@ -373,7 +387,7 @@ router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', webhookRateLim
 router.postAsync('/postal', webhookRateLimiters.postal, async (req, res) => {
     assertProviderEnabled(webhookConfig.postal);
     req.body = parseJsonBody(req.body);
-    verifyPostalSignature({
+    const replayReservation = verifyPostalSignature({
         rawBody: req.rawBody,
         signature: req.get('x-postal-signature-256'),
         keyId: req.get('x-postal-signature-kid'),
@@ -385,28 +399,30 @@ router.postAsync('/postal', webhookRateLimiters.postal, async (req, res) => {
         replayCache: postalReplayCache
     });
 
-    switch (req.body.event) {
+    await runReplayProtected(replayReservation, async () => {
+        switch (req.body.event) {
 
-        case 'MessageDeliveryFailed':
-            if (req.body.payload.message && req.body.payload.message.message_id) {
-                const message = await campaigns.getMessageByResponseId(req.body.payload.message.message_id);
-                if (message) {
-                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.payload.status === 'HardFail');
-                    log.verbose('Postal', 'Marked an authenticated provider event as bounced');
+            case 'MessageDeliveryFailed':
+                if (req.body.payload.message && req.body.payload.message.message_id) {
+                    const message = await campaigns.getMessageByResponseId(req.body.payload.message.message_id);
+                    if (message) {
+                        await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, req.body.payload.status === 'HardFail');
+                        log.verbose('Postal', 'Marked an authenticated provider event as bounced');
+                    }
                 }
-            }
-            break;
+                break;
 
-        case 'MessageBounced':
-            if (req.body.payload.original_message && req.body.payload.original_message.message_id) {
-                const message = await campaigns.getMessageByResponseId(req.body.payload.original_message.message_id);
-                if (message) {
-                    await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
-                    log.verbose('Postal', 'Marked an authenticated provider event as bounced');
+            case 'MessageBounced':
+                if (req.body.payload.original_message && req.body.payload.original_message.message_id) {
+                    const message = await campaigns.getMessageByResponseId(req.body.payload.original_message.message_id);
+                    if (message) {
+                        await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
+                        log.verbose('Postal', 'Marked an authenticated provider event as bounced');
+                    }
                 }
-            }
-            break;
-    }
+                break;
+        }
+    });
 
     res.json({
         success: true

@@ -255,7 +255,8 @@ async function _createTransport(sendConfiguration) {
 
     transport.use('stream', openpgpEncrypt({
         signingKey: configItems.pgpPrivateKey,
-        passphrase: configItems.pgpPassphrase
+        passphrase: configItems.pgpPassphrase,
+        maxMessageBytes: config.security.openPgp.maxMessageBytes
     }));
 
     if (existingListeners.length) {

@@ -9,6 +9,7 @@ const contextHelpers = require('../lib/context-helpers');
 const { AppType } = require('../../shared/app');
 const {untrustedContentSecurityPolicy} = require('../lib/browser-security');
 const {sanitizeUntrustedHtml} = require('../lib/html-sanitizer');
+const {getTrustedUrl} = require('../lib/urls');
 
 
 users.registerRestrictedAccessTokenMethod('rssPreview', async ({campaignCid, listCid}) => {
@@ -18,10 +19,10 @@ users.registerRestrictedAccessTokenMethod('rssPreview', async ({campaignCid, lis
 
     return {
         permissions: {
-            'campaign': {
+            campaign: {
                 [campaign.id]: new Set(['view'])
             },
-            'list': {
+            list: {
                 [list.id]: new Set(['view', 'viewTestSubscriptions'])
             }
         }

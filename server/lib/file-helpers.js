@@ -1,6 +1,7 @@
 'use strict';
 
 const passport = require('./passport');
+const config = require('./config');
 const files = require('../models/files');
 
 const path = require('path');
@@ -8,7 +9,13 @@ const uploadedFilesDir = path.join(files.filesDir, 'uploaded');
 const {castToInteger} = require('./helpers');
 
 const multer = require('multer')({
-    dest: uploadedFilesDir
+    dest: uploadedFilesDir,
+    limits: {
+        fileSize: config.security.uploads.maxFileSizeBytes,
+        files: config.security.uploads.maxFiles,
+        fields: 10,
+        parts: config.security.uploads.maxFiles + 10
+    }
 });
 
 function installUploadHandler(router, url, replacementBehavior, type, subType, transformResponseFn) {

@@ -19,7 +19,7 @@ function read(relativePath) {
 
 test('Netcup Compose exposes only Traefik and isolates every datastore', () => {
     const compose = yaml.safeLoad(read('compose.yml'));
-    assert.deepEqual(Object.keys(compose.services).sort(), ['files-init', 'mailtrain', 'mariadb', 'migrate', 'mongo', 'redis', 'traefik']);
+    assert.deepEqual(Object.keys(compose.services).sort(), ['files-init', 'mailtrain', 'mariadb', 'migrate', 'mongo', 'redis', 'secret-migrate', 'traefik']);
     assert.deepEqual(compose.services.traefik.ports, ['80:80', '443:443']);
     for (const [name, service] of Object.entries(compose.services)) {
         if (name !== 'traefik') {
@@ -53,7 +53,7 @@ test('trusted, sandbox, and public HTTPS origins have distinct Traefik routers',
 
 test('containers are least-privilege, bounded, health-checked, and digest-pinned', () => {
     const compose = yaml.safeLoad(read('compose.yml'));
-    for (const name of ['traefik', 'mailtrain', 'migrate', 'mariadb', 'redis', 'mongo']) {
+    for (const name of ['traefik', 'mailtrain', 'migrate', 'secret-migrate', 'mariadb', 'redis', 'mongo']) {
         const service = compose.services[name];
         assert.equal(service.read_only, true, `${name} root filesystem must be read-only`);
         assert.deepEqual(service.cap_drop, ['ALL']);
@@ -61,7 +61,7 @@ test('containers are least-privilege, bounded, health-checked, and digest-pinned
         assert.ok(service.pids_limit > 0);
         assert.ok(service.mem_limit);
         assert.ok(service.cpus);
-        if (name !== 'migrate') {
+        if (!['migrate', 'secret-migrate'].includes(name)) {
             assert.ok(service.healthcheck);
         }
         assert.match(service.image, /^\$\{[A-Z_]+_IMAGE:\?/);

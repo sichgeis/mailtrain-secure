@@ -17,12 +17,16 @@ case "${MAILTRAIN_MODE:?MAILTRAIN_MODE is required}" in
     cd /app/server
     exec node setup/docker-entrypoint-db-setup.js
     ;;
+  secrets)
+    cd /app/server
+    exec node setup/security/secret-migration.js "${1:?Secret migration mode must be dry-run, migrate, or verify}"
+    ;;
   app)
     cd /app/server
     exec node index.js
     ;;
   *)
-    echo 'MAILTRAIN_MODE must be migrate or app' >&2
+    echo 'MAILTRAIN_MODE must be migrate, secrets, or app' >&2
     exit 1
     ;;
 esac

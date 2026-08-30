@@ -27,8 +27,9 @@ No production migration is performed by these files on their own. A plain `docke
 2. For a new or existing files volume, run `docker compose --env-file .env -f compose.yml --profile maintenance run --rm files-init`. Inspect the output and verify UID 10001 can create and remove a test file in the volume. This narrowly capable, one-shot root container is the only ownership migration path; it never joins a network or mounts secrets.
 3. Take and verify the coordinated backup described above.
 4. Run `docker compose --env-file .env -f compose.yml --profile migration run --rm migrate`.
-5. Review the complete migration output, schema state, row counts, canonical hashes, and Stage 7 secret-migration verification. Stop and restore if any check differs.
-6. Only after explicit operator approval, start the long-running services with `docker compose --env-file .env -f compose.yml --profile runtime up -d mailtrain traefik`.
+5. Run `docker compose --env-file .env -f compose.yml --profile migration run --rm secret-migrate dry-run`, review its proposed record counts, then run `docker compose --env-file .env -f compose.yml --profile migration run --rm secret-migrate migrate` and `docker compose --env-file .env -f compose.yml --profile migration run --rm secret-migrate verify`.
+6. Review the complete migration output, schema state, row counts, canonical hashes, and Stage 7 secret-migration verification. Stop and restore if any check differs.
+7. Only after explicit operator approval, start the long-running services with `docker compose --env-file .env -f compose.yml --profile runtime up -d mailtrain traefik`.
 
 The runtime service does not depend on the migration service and refuses to start with a pending schema migration.
 

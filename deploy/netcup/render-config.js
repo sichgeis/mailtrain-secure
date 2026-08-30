@@ -37,7 +37,7 @@ const configuration = {
         user: required('MAILTRAIN_DB_USER'),
         password: secret('MAILTRAIN_DB_SECRET_FILE'),
         ssl: {
-            ca: fs.readFileSync('/run/secrets/db_ca', 'utf8'),
+            ca: fs.readFileSync(process.env.MAILTRAIN_DB_CA_FILE || '/run/secrets/db_ca', 'utf8'),
             rejectUnauthorized: true
         }
     },
@@ -80,7 +80,7 @@ if (mode === 'app') {
     };
 }
 
-const outputDirectory = '/run/mailtrain-config';
+const outputDirectory = process.env.MAILTRAIN_CONFIG_OUTPUT_DIR || '/run/mailtrain-config';
 fs.mkdirSync(outputDirectory, {recursive: true, mode: 0o700});
 const output = path.join(outputDirectory, 'production.json');
 fs.writeFileSync(output, `${JSON.stringify(configuration)}\n`, {mode: 0o600});

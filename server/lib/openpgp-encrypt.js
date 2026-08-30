@@ -13,10 +13,19 @@ class OpenPgpTransform extends Transform {
         this.options = options || {};
         this.chunks = [];
         this.length = 0;
+        this.maxMessageBytes = Number.isSafeInteger(this.options.maxMessageBytes) && this.options.maxMessageBytes > 0
+            ? this.options.maxMessageBytes
+            : 32 * 1024 * 1024;
     }
 
     _transform(chunk, encoding, callback) {
         const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding);
+        if (this.length + buffer.length > this.maxMessageBytes) {
+            const error = new Error('OpenPGP message exceeds the configured size limit');
+            error.code = 'EPGPMESSAGESIZE';
+            callback(error);
+            return;
+        }
         this.chunks.push(buffer);
         this.length += buffer.length;
         callback();
@@ -149,6 +158,7 @@ function openpgpEncrypt(options) {
         mail.message.transform(() => new OpenPgpTransform({
             signingKey: options.signingKey,
             passphrase: options.passphrase,
+            maxMessageBytes: options.maxMessageBytes,
             encryptionKeys,
             shouldSign: mail.data.shouldSign
         }));

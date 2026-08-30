@@ -158,6 +158,34 @@ services:
     restart: "no"
     profiles: [migration]
 
+  secret-migrate:
+    <<: *hardening
+    image: "${MAILTRAIN_IMAGE:?Set MAILTRAIN_IMAGE to this commit at an immutable sha256 digest}"
+    user: "10001:10001"
+    entrypoint: [/bin/sh, /app/deploy/netcup/mailtrain-entrypoint.sh]
+    command: [verify]
+    environment:
+      MAILTRAIN_MODE: secrets
+      MAILTRAIN_DB_HOST: mariadb
+      MAILTRAIN_DB_NAME: "${MAILTRAIN_DB_NAME:-mailtrain}"
+      MAILTRAIN_DB_USER: "${MAILTRAIN_DB_MIGRATION_USER:-mailtrain_migrate}"
+      MAILTRAIN_DB_SECRET_FILE: /run/secrets/db_migration_secret
+      MAILTRAIN_MASTER_KEY_FILE: /run/secrets/mailtrain_master_key
+      MAILTRAIN_MASTER_KEY_ID: "${MAILTRAIN_MASTER_KEY_ID:?Set the non-secret active key id}"
+      MAILTRAIN_ALLOW_PLAINTEXT_SECRETS: "true"
+    secrets: [db_migration_secret, db_ca, mailtrain_master_key]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /run/mailtrain-config:rw,noexec,nosuid,nodev,size=4m,uid=10001,gid=10001,mode=0700
+    networks: [backend]
+    depends_on:
+      mariadb: {condition: service_healthy}
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.00
+    restart: "no"
+    profiles: [migration]
+
   files-init:
     image: "${MAILTRAIN_IMAGE:?Set MAILTRAIN_IMAGE to this commit at an immutable sha256 digest}"
     user: "0:0"
