@@ -30,6 +30,10 @@ function createAggregateDiskStorage({destination, maxTotalBytes}) {
             req[requestBytes] = req[requestBytes] || 0;
             const filename = crypto.randomBytes(16).toString('hex');
             const filenamePath = path.join(destination, filename);
+            file.destination = destination;
+            file.filename = filename;
+            file.path = filenamePath;
+            file.mailtrainCleanupRequested = false;
             const output = fs.createWriteStream(filenamePath, {flags: 'wx', mode: 0o600});
             let fileSize = 0;
             const limiter = new Transform({
@@ -48,15 +52,26 @@ function createAggregateDiskStorage({destination, maxTotalBytes}) {
                 }
             });
             pipeline(file.stream, limiter, output, err => {
-                if (err) {
-                    fs.unlink(filenamePath, () => callback(err));
+                if (err || file.mailtrainCleanupRequested) {
+                    const completionError = err || Object.assign(new Error('Upload was aborted during storage'), {code: 'EUPLOADABORTED'});
+                    fs.unlink(filenamePath, unlinkError => {
+                        if (unlinkError && unlinkError.code !== 'ENOENT') {
+                            return callback(unlinkError);
+                        }
+                        return callback(completionError);
+                    });
                     return;
                 }
                 callback(null, {destination, filename, path: filenamePath, size: fileSize});
             });
         },
         _removeFile(req, file, callback) {
-            fs.unlink(file.path, callback);
+            file.mailtrainCleanupRequested = true;
+            if (!file.path) {
+                callback();
+                return;
+            }
+            fs.unlink(file.path, err => callback(err && err.code !== 'ENOENT' ? err : null));
         }
     };
 }
