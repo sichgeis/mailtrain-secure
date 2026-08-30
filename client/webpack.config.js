@@ -115,6 +115,9 @@ module.exports = {
         mailtrainConfig: 'mailtrainConfig'
     },
     plugins: [
+      new webpack.ProvidePlugin({
+        process: 'process/browser'
+      }),
       new CopyPlugin({
         patterns: [
           { from: './node_modules/jquery/dist/jquery.min.js', to: path.resolve(__dirname, 'dist') },
