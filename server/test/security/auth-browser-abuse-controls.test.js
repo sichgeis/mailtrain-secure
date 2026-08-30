@@ -155,13 +155,14 @@ test('host and unsafe-method origin checks reject cross-origin boundary confusio
 
 test('stored HTML sanitization removes active content while preserving email layout', () => {
     const dirty = '<table style="color:red;background:url(javascript:alert(1))"><tr><td onclick="alert(1)">Hello <strong>world</strong></td></tr></table>' +
+        '<div style="background:u\\72l(https://escaped-inline.test/x)">escaped</div><div style="--x:u\\72l(https://escaped-variable.test/x);background:var(--x)">variable</div>' +
         '<script>alert(1)</script><iframe src="https://evil.test"></iframe><object data="x"></object>' +
         '<svg onload="alert(1)"></svg><a href="javascript:alert(1)">bad</a><img src="data:text/html,x" onerror="x">' +
         '<a href="https://safe.example/path">safe</a>';
     const clean = sanitizeUntrustedHtml(dirty);
     assert.match(clean, /<table/);
     assert.match(clean, /<strong>world<\/strong>/);
-    assert.doesNotMatch(clean, /script|iframe|object|svg|onclick|onerror|javascript:|data:text|background:/i);
+    assert.doesNotMatch(clean, /script|iframe|object|svg|onclick|onerror|javascript:|data:text|background:|escaped-inline|escaped-variable|\\72l/i);
     assert.match(clean, /href="https:\/\/safe\.example\/path"/);
     assert.match(clean, /rel="noopener noreferrer"/);
 

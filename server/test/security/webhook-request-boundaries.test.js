@@ -186,6 +186,13 @@ test('SendGrid verifies ECDSA over timestamp plus untouched request bytes', () =
     assert.throws(() => verifySendGridSignature({rawBody, timestamp: String(Number(timestamp) - 3600), signature}, {...options, replayCache: new ReplayCache()}), /timestamp/i);
 });
 
+test('SendGrid durable deduplication uses stable per-event ids across signed batches', () => {
+    const routes = fs.readFileSync(path.join(repositoryRoot, 'server/routes/webhooks.js'), 'utf8');
+    assert.match(routes, /sg_event_id/);
+    assert.match(routes, /deliveryLedger\.reserve\(['"]sendgrid-event['"],\s*evt\.sg_event_id\)/);
+    assert.doesNotMatch(routes, /deliveryLedger\.reserve\(['"]sendgrid['"],\s*sendgridSignature\)/);
+});
+
 test('Postal verifies the RSA-SHA256 body signature and configured key id', () => {
     const {privateKey, publicKey} = crypto.generateKeyPairSync('rsa', {modulusLength: 2048});
     const timestamp = now / 1000;
