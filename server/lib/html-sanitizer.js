@@ -33,12 +33,35 @@ function sanitizeStyle(value) {
         .join('; ');
 }
 
-function sanitizeStyleSheet(value) {
-    const stylesheet = String(value || '').trim();
-    if (!stylesheet || /@import|url\s*\(|expression\s*\(|behavior\s*:|-moz-binding|javascript\s*:|data\s*:/i.test(stylesheet)) {
-        return '';
+function sanitizeCssDeclarations(style) {
+    const declarations = [];
+    for (const property of Array.from(style || [])) {
+        const value = style.getPropertyValue(property);
+        if (/(?:url\s*\(|expression\s*\(|behavior\s*:|-moz-binding|javascript\s*:|data\s*:)/i.test(value)) {
+            continue;
+        }
+        declarations.push(`${property}:${value}${style.getPropertyPriority(property) ? ' !important' : ''}`);
     }
-    return stylesheet;
+    return declarations.join(';');
+}
+
+function sanitizeCssRules(rules) {
+    const output = [];
+    for (const rule of Array.from(rules || [])) {
+        if (rule.type === 1) {
+            const declarations = sanitizeCssDeclarations(rule.style);
+            if (declarations) {
+                output.push(`${rule.selectorText}{${declarations}}`);
+            }
+        } else if (rule.type === 4 || rule.type === 12) {
+            const nested = sanitizeCssRules(rule.cssRules);
+            if (nested) {
+                const name = rule.type === 4 ? 'media' : 'supports';
+                output.push(`@${name} ${rule.conditionText}{${nested}}`);
+            }
+        }
+    }
+    return output.join('');
 }
 
 function isSafeViewportMeta(element) {
@@ -57,7 +80,7 @@ function sanitizeUntrustedHtml(html) {
             continue;
         }
         if (element.localName === 'style') {
-            const stylesheet = sanitizeStyleSheet(element.textContent);
+            const stylesheet = element.sheet ? sanitizeCssRules(element.sheet.cssRules) : '';
             if (!stylesheet) {
                 element.remove();
             } else {

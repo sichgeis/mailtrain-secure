@@ -11,9 +11,10 @@ const {MailerType} = require('../../shared/send-configurations');
 const log = require('../lib/log');
 const config = require('../lib/config');
 const builtinZoneMta = require('../lib/builtin-zone-mta');
+const knex = require('../lib/knex');
+const {WebhookDeliveryLedger} = require('../lib/webhook-delivery-ledger');
 const {createMailgunUpload, mailgunFields} = require('../lib/mailgun-upload');
 const {
-    ReplayCache,
     assertBasicAuthorization,
     assertBearerAuthorization,
     assertExpectedFields,
@@ -25,13 +26,11 @@ const {
 } = require('../lib/webhook-security');
 
 const webhookConfig = config.security.webhooks;
-const replayOptions = {maxEntries: webhookConfig.replayCacheEntries};
-const awsReplayCache = new ReplayCache(replayOptions);
-const sparkpostReplayCache = new ReplayCache(replayOptions);
-const sendgridReplayCache = new ReplayCache(replayOptions);
-const mailgunReplayCache = new ReplayCache(replayOptions);
-const postalReplayCache = new ReplayCache(replayOptions);
-const zoneMtaReplayCache = new ReplayCache(replayOptions);
+const deliveryLedger = new WebhookDeliveryLedger({
+    knex,
+    leaseMs: webhookConfig.processingLeaseMs,
+    retentionMs: webhookConfig.deliveryRetentionMs
+});
 const awsCertificates = new Map();
 const mailgunUpload = createMailgunUpload(webhookConfig.mailgun);
 
@@ -104,12 +103,13 @@ router.postAsync('/aws', webhookRateLimiters.aws, async (req, res) => {
     assertProviderEnabled(webhookConfig.aws);
     req.body = parseJsonBody(req.body);
 
-    const replayReservation = await verifyAwsSnsMessage(req.body, {
+    await verifyAwsSnsMessage(req.body, {
         topicArns: webhookConfig.aws.topicArns,
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
-        replayCache: awsReplayCache,
+        maxDeliveryAgeMs: webhookConfig.maxDeliveryAgeMs,
         fetchCertificate: fetchAwsCertificate
     });
+    const replayReservation = await deliveryLedger.reserve('aws', req.body.MessageId);
 
     await runReplayProtected(replayReservation, async () => {
         switch (req.body.Type) {
@@ -183,7 +183,7 @@ router.postAsync('/sparkpost', webhookRateLimiters.sparkpost, async (req, res) =
         error.status = 400;
         throw error;
     }
-    const replayReservation = sparkpostReplayCache.reserve(`sparkpost:${batchId}`, webhookConfig.maxClockSkewMs);
+    const replayReservation = await deliveryLedger.reserve('sparkpost', batchId);
     const events = [].concat(req.body || []); // This is just a cryptic way getting an array regardless whether req.body is empty, one item, or array
 
     await runReplayProtected(replayReservation, async () => {
@@ -234,15 +234,17 @@ router.postAsync('/sparkpost', webhookRateLimiters.sparkpost, async (req, res) =
 
 router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => {
     assertProviderEnabled(webhookConfig.sendgrid);
-    const replayReservation = verifySendGridSignature({
+    const sendgridSignature = req.get('x-twilio-email-event-webhook-signature');
+    verifySendGridSignature({
         rawBody: req.rawBody,
         timestamp: req.get('x-twilio-email-event-webhook-timestamp'),
-        signature: req.get('x-twilio-email-event-webhook-signature')
+        signature: sendgridSignature
     }, {
         publicKey: webhookConfig.sendgrid.publicKey,
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
-        replayCache: sendgridReplayCache
+        maxDeliveryAgeMs: webhookConfig.maxDeliveryAgeMs
     });
+    const replayReservation = await deliveryLedger.reserve('sendgrid', sendgridSignature);
     let events = [].concat(req.body || []);
 
     await runReplayProtected(replayReservation, async () => {
@@ -287,11 +289,12 @@ router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => 
 
 router.postAsync('/mailgun', webhookRateLimiters.mailgun, requireProvider(webhookConfig.mailgun), mailgunUpload, async (req, res) => {
     assertExpectedFields(req.body, mailgunFields);
-    const replayReservation = verifyMailgunSignature(req.body, {
+    verifyMailgunSignature(req.body, {
         signingKey: webhookConfig.mailgun.signingKey,
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
-        replayCache: mailgunReplayCache
+        maxDeliveryAgeMs: webhookConfig.maxDeliveryAgeMs
     });
+    const replayReservation = await deliveryLedger.reserve('mailgun', [].concat(req.body.token || []).shift());
     const evt = req.body;
 
     log.verbose('Mailgun', 'Received authenticated event type "%s"', evt.event);
@@ -333,7 +336,7 @@ router.postAsync('/zone-mta', webhookRateLimiters.zoneMta, async (req, res) => {
     req.body = parseJsonBody(req.body);
 
     if (req.body.id) {
-        const replayReservation = zoneMtaReplayCache.reserve(`zone-mta:${req.body.id}`, webhookConfig.maxClockSkewMs);
+        const replayReservation = await deliveryLedger.reserve('zone-mta', req.body.id);
         await runReplayProtected(replayReservation, async () => {
             const message = await campaigns.getMessageByResponseId(req.body.id);
 
@@ -387,17 +390,19 @@ router.postAsync('/zone-mta/sender-config/:sendConfigurationCid', webhookRateLim
 router.postAsync('/postal', webhookRateLimiters.postal, async (req, res) => {
     assertProviderEnabled(webhookConfig.postal);
     req.body = parseJsonBody(req.body);
-    const replayReservation = verifyPostalSignature({
+    const postalSignature = req.get('x-postal-signature-256');
+    verifyPostalSignature({
         rawBody: req.rawBody,
-        signature: req.get('x-postal-signature-256'),
+        signature: postalSignature,
         keyId: req.get('x-postal-signature-kid'),
         timestamp: req.body.timestamp
     }, {
         publicKey: webhookConfig.postal.publicKey,
         keyIds: webhookConfig.postal.keyIds,
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
-        replayCache: postalReplayCache
+        maxDeliveryAgeMs: webhookConfig.maxDeliveryAgeMs
     });
+    const replayReservation = await deliveryLedger.reserve('postal', postalSignature);
 
     await runReplayProtected(replayReservation, async () => {
         switch (req.body.event) {

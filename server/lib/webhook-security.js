@@ -26,11 +26,16 @@ function assertConfigured(value, name) {
     }
 }
 
-function assertFreshTimestamp(value, {now = Date.now, maxClockSkewMs = defaultReplayWindowMs} = {}) {
+function assertFreshTimestamp(value, {
+    now = Date.now,
+    maxClockSkewMs = defaultReplayWindowMs,
+    maxAgeMs = maxClockSkewMs
+} = {}) {
     const timestamp = (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value))
         ? Number(value) * 1000
         : Date.parse(value);
-    if (!Number.isFinite(timestamp) || Math.abs(now() - timestamp) > maxClockSkewMs) {
+    const age = now() - timestamp;
+    if (!Number.isFinite(timestamp) || age < -maxClockSkewMs || age > maxAgeMs) {
         throw securityError('Webhook timestamp is invalid or outside the accepted window');
     }
 }
@@ -160,13 +165,14 @@ function verifyMailgunSignature(payload, {
     signingKey,
     now = Date.now,
     maxClockSkewMs = defaultReplayWindowMs,
+    maxDeliveryAgeMs = maxClockSkewMs,
     replayCache
 }) {
     assertConfigured(signingKey, 'Mailgun webhook signing key');
     const timestamp = String(singleValue(payload.timestamp) || '');
     const token = String(singleValue(payload.token) || '');
     const signature = String(singleValue(payload.signature) || '');
-    assertFreshTimestamp(timestamp, {now, maxClockSkewMs});
+    assertFreshTimestamp(timestamp, {now, maxClockSkewMs, maxAgeMs: maxDeliveryAgeMs});
     if (!token || !/^[a-f0-9]{64}$/i.test(signature)) {
         throw securityError('Mailgun webhook signature is invalid');
     }
@@ -182,6 +188,7 @@ function verifySendGridSignature({rawBody, timestamp, signature}, {
     publicKey,
     now = Date.now,
     maxClockSkewMs = defaultReplayWindowMs,
+    maxDeliveryAgeMs = maxClockSkewMs,
     replayCache
 }) {
     if (!publicKey) {
@@ -190,7 +197,7 @@ function verifySendGridSignature({rawBody, timestamp, signature}, {
     if (!Buffer.isBuffer(rawBody) || typeof signature !== 'string') {
         throw securityError('SendGrid webhook signature is invalid');
     }
-    assertFreshTimestamp(timestamp, {now, maxClockSkewMs});
+    assertFreshTimestamp(timestamp, {now, maxClockSkewMs, maxAgeMs: maxDeliveryAgeMs});
 
     let valid = false;
     try {
@@ -209,6 +216,7 @@ function verifyPostalSignature({rawBody, signature, keyId, timestamp}, {
     keyIds = [],
     now = Date.now,
     maxClockSkewMs = defaultReplayWindowMs,
+    maxDeliveryAgeMs = maxClockSkewMs,
     replayCache
 }) {
     if (!publicKey) {
@@ -220,7 +228,7 @@ function verifyPostalSignature({rawBody, signature, keyId, timestamp}, {
     if (keyIds.length > 0 && !keyIds.some(expected => secureEqual(keyId, expected))) {
         throw securityError('Postal webhook key id is invalid');
     }
-    assertFreshTimestamp(timestamp, {now, maxClockSkewMs});
+    assertFreshTimestamp(timestamp, {now, maxClockSkewMs, maxAgeMs: maxDeliveryAgeMs});
 
     let valid = false;
     try {
@@ -274,6 +282,7 @@ async function verifyAwsSnsMessage(message, {
     fetchCertificate,
     now = Date.now,
     maxClockSkewMs = defaultReplayWindowMs,
+    maxDeliveryAgeMs = maxClockSkewMs,
     replayCache
 }) {
     if (!message || !['Notification', 'SubscriptionConfirmation', 'UnsubscribeConfirmation'].includes(message.Type)) {
@@ -288,7 +297,7 @@ async function verifyAwsSnsMessage(message, {
     if (typeof fetchCertificate !== 'function') {
         throw securityError('AWS SNS certificate fetcher is not configured', 503);
     }
-    assertFreshTimestamp(message.Timestamp, {now, maxClockSkewMs});
+    assertFreshTimestamp(message.Timestamp, {now, maxClockSkewMs, maxAgeMs: maxDeliveryAgeMs});
     const certUrl = validateAwsSnsUrl(message.SigningCertURL, 'SigningCertURL', message.TopicArn, true);
     const certificate = await fetchCertificate(certUrl.toString());
     const algorithm = String(message.SignatureVersion) === '2' ? 'sha256' : 'sha1';

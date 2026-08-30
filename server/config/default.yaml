@@ -247,7 +247,8 @@ reports:
 
 security:
   uploads:
-    maxFileSizeBytes: 20971520
+    maxFileSizeBytes: 16777216
+    maxTotalBytes: 16777216
     maxFiles: 10
   openPgp:
     maxMessageBytes: 33554432
@@ -311,6 +312,9 @@ security:
     allowedSubscriberDataOrigins: []
   webhooks:
     maxClockSkewMs: 300000
+    maxDeliveryAgeMs: 2592000000
+    processingLeaseMs: 300000
+    deliveryRetentionMs: 2592000000
     replayCacheEntries: 10000
     aws:
       enabled: false
