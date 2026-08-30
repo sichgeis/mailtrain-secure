@@ -47,7 +47,9 @@ test('CI pins third-party actions and service images to immutable digests', () =
     const workflow = yaml.safeLoad(workflowSource);
     for (const job of Object.values(workflow.jobs)) {
         for (const step of job.steps || []) {
-            if (step.uses) assert.match(step.uses, /^[^@]+@[0-9a-f]{40}$/);
+            if (step.uses) {
+                assert.match(step.uses, /^[^@]+@[0-9a-f]{40}$/);
+            }
         }
         for (const service of Object.values(job.services || {})) {
             if (typeof service.image === 'string' && !service.image.includes('${{')) {
