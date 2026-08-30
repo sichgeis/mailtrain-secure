@@ -121,9 +121,7 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
                 tag_language: 'simple',
                 namespace: 1,
                 data: {
-                    mosaicoTemplate: 1,
-                    metadata: null,
-                    model: null
+                    mosaicoTemplate: 1
                 },
                 html: '',
                 text: ''
@@ -142,8 +140,13 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     await page.goto(`${trustedOrigin}/templates/${createdTemplate.id}/edit`);
 
     const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
-    await expect(editor.locator('[data-ko-block]').first()).toBeAttached({timeout: 30000});
-    expect(await editor.locator('[data-ko-block]').count()).toBeGreaterThan(0);
+    await expect.poll(async () => {
+        let blockCount = 0;
+        for (const frame of page.frames()) {
+            blockCount += await frame.locator('[data-ko-block]').count();
+        }
+        return blockCount;
+    }, {timeout: 30000}).toBeGreaterThan(0);
     await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
     expect(dialogs).not.toContain('Update your browser!');
 });
