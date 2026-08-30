@@ -88,3 +88,62 @@ test('synthetic admin can log in through the trusted origin', async ({page}) => 
     expect(csrfCookie.httpOnly).toBe(true);
     expect(csrfCookie.sameSite).toBe('Lax');
 });
+
+test('database-backed Mosaico editor initializes inside the sandbox origin', async ({page}) => {
+    const dialogs = [];
+    page.on('dialog', async dialog => {
+        dialogs.push(dialog.message());
+        await dialog.dismiss();
+    });
+
+    await page.goto(`${trustedOrigin}/login`);
+    await page.locator('#form_username').fill('admin');
+    await page.locator('#form_password').fill('test');
+    await Promise.all([
+        page.waitForURL(`${trustedOrigin}/`),
+        page.locator('button[type="submit"]').click()
+    ]);
+
+    const createdTemplate = await page.evaluate(async () => {
+        // eslint-disable-next-line no-undef
+        const response = await globalThis.fetch('/rest/templates', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                // eslint-disable-next-line no-undef
+                'X-CSRF-TOKEN': globalThis.csrfToken
+            },
+            body: JSON.stringify({
+                name: 'Playwright Mosaico initialization fixture',
+                description: 'Synthetic CI data',
+                type: 'mosaico',
+                tag_language: 'simple',
+                namespace: 1,
+                data: {
+                    mosaicoTemplate: 1,
+                    metadata: null,
+                    model: null
+                },
+                html: '',
+                text: ''
+            })
+        });
+
+        return {
+            status: response.status,
+            id: await response.json()
+        };
+    });
+
+    expect(createdTemplate.status).toBe(200);
+    expect(createdTemplate.id).toBeGreaterThan(0);
+
+    await page.goto(`${trustedOrigin}/templates/${createdTemplate.id}/edit`);
+
+    const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
+    await expect(editor.locator('[data-ko-block]').first()).toBeAttached({timeout: 30000});
+    expect(await editor.locator('[data-ko-block]').count()).toBeGreaterThan(0);
+    await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
+    expect(dialogs).not.toContain('Update your browser!');
+});
