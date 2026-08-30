@@ -115,7 +115,7 @@ test('datastore credentials, TLS, and database duties are separated', () => {
     assert.match(bootstrap, /GRANT ALL PRIVILEGES ON/);
 });
 
-test('rendered app configuration enables production-safe session cookies', () => {
+test('rendered app configuration preserves production compatibility and safe sessions', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-render-config-'));
     const secretFile = path.join(directory, 'secret');
     const caFile = path.join(directory, 'db-ca');
@@ -143,6 +143,10 @@ test('rendered app configuration enables production-safe session cookies', () =>
     });
     assert.equal(result.status, 0, result.stderr);
     const rendered = JSON.parse(fs.readFileSync(path.join(directory, 'production.json')));
+    assert.deepEqual(rendered.gdpr, {
+        deleteDataAfterUnsubscribe: {enabled: false},
+        deleteSubscriptionAfterUnsubscribe: {enabled: false}
+    });
     validateSessionSecurity({secret: rendered.www.secret, ...rendered.security.sessions}, {production: true});
     fs.rmSync(directory, {recursive: true, force: true});
 });
