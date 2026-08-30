@@ -222,6 +222,7 @@ test('body parsing and webhook defaults are bounded and fail closed', () => {
 
     assert.match(appBuilder, /rawBody/);
     assert.equal(defaults.security.webhooks.aws.enabled, false);
+    assert.ok(defaults.security.webhooks.maxDeliveryAgeMs >= 30 * 60 * 1000);
     assert.equal(defaults.security.webhooks.mailgun.maxFieldSize > 0, true);
     assert.equal(defaults.security.webhooks.mailgun.maxFields > 0, true);
     assert.equal(defaults.security.requestTimeoutMs > 0, true);

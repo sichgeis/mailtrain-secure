@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const yaml = require('js-yaml');
+const {assertAggregateUploadSize} = require('../../lib/upload-limits');
 const {
     applyAdminBootstrap,
     validateAdminPassword
@@ -96,7 +97,12 @@ test('campaign uploads and OpenPGP buffering have explicit production bounds', (
     const mailers = fs.readFileSync(path.join(repositoryRoot, 'server/lib/mailers.js'), 'utf8');
     assert.ok(defaults.security.uploads.maxFileSizeBytes > 0);
     assert.ok(defaults.security.uploads.maxFiles > 0);
-    assert.ok(defaults.security.openPgp.maxMessageBytes > defaults.security.uploads.maxFileSizeBytes);
+    assert.ok(defaults.security.uploads.maxTotalBytes >= defaults.security.uploads.maxFileSizeBytes);
+    assert.ok(Math.ceil(defaults.security.uploads.maxTotalBytes * 4 / 3) + 4 * 1024 * 1024 < defaults.security.openPgp.maxMessageBytes);
     assert.match(uploads, /limits:/);
+    assert.match(uploads, /assertAggregateUploadSize/);
     assert.match(mailers, /maxMessageBytes/);
+
+    assert.doesNotThrow(() => assertAggregateUploadSize([{size: 8}, {size: 8}], 16));
+    assert.throws(() => assertAggregateUploadSize([{size: 8}, {size: 9}], 16), error => error.status === 413);
 });

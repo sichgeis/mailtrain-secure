@@ -181,6 +181,7 @@ jobs:
         working-directory: server
         run: |
           npm run test:integration
+          node test/integration/webhook-delivery-ledger-smoke.js
           node test/integration/secret-migration-smoke.js seed
           node test/integration/secret-migration-smoke.js compatibility
           npm run security:secrets -- dry-run

@@ -165,13 +165,13 @@ test('stored HTML sanitization removes active content while preserving email lay
     assert.match(clean, /href="https:\/\/safe\.example\/path"/);
     assert.match(clean, /rel="noopener noreferrer"/);
 
-    const fullDocument = sanitizeUntrustedHtml('<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>@media (max-width:600px){.column{display:block}}</style><style>@import "https://evil.test/x.css"</style><script>x</script></head><body><table><tr><td>Kept</td></tr></table></body></html>');
+    const fullDocument = sanitizeUntrustedHtml('<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>@media (max-width:600px){.column{display:block}}</style><style>@import "https://evil.test/x.css";.x{background:url(https://evil.test/x)}</style><style>@\\69mport "https://escaped.test/x.css";.x{background:u\\72l(https://escaped.test/x)}</style><script>x</script></head><body><table><tr><td>Kept</td></tr></table></body></html>');
     assert.match(fullDocument, /<!DOCTYPE html>/i);
     assert.match(fullDocument, /<\/body><\/html>/i);
     assert.match(fullDocument, /<td>Kept<\/td>/);
     assert.match(fullDocument, /<meta name="viewport" content="width=device-width">/i);
     assert.match(fullDocument, /<style>@media \(max-width:600px\)\{\.column\{display:block\}\}<\/style>/i);
-    assert.doesNotMatch(fullDocument, /<script|@import|evil\.test/i);
+    assert.doesNotMatch(fullDocument, /<script|@import|evil\.test|escaped\.test|\\69mport|\\72l/i);
 });
 
 test('log redaction removes URL, header, email, form, and reset-token canaries', () => {

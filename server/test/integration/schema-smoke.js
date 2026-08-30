@@ -25,7 +25,7 @@ async function run() {
     try {
         const rows = await query('SHOW TABLES');
         const tableNames = new Set(rows.flatMap(row => Object.values(row)));
-        for (const requiredTable of ['settings', 'users', 'namespaces', 'lists', 'campaigns', 'knex_migrations']) {
+        for (const requiredTable of ['settings', 'users', 'namespaces', 'lists', 'campaigns', 'webhook_deliveries', 'knex_migrations']) {
             assert.ok(tableNames.has(requiredTable), `expected migrated table ${requiredTable}`);
         }
 
