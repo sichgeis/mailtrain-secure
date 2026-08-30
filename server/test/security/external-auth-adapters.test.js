@@ -61,6 +61,11 @@ test('CAS profiles and logout URLs retain Mailtrain compatibility', () => {
         () => normalizeCasProfile({attributes: {}}, {nameTag: 'name', mailTag: 'mail'}),
         error => error.code === 'EEXTERNALAUTH'
     );
+
+    assert.equal(normalizeCasProfile({
+        user: 'alice',
+        attributes: {displayname: 'Alice Example'}
+    }, {nameTag: 'displayName', mailTag: 'mail'}).displayName, 'Alice Example');
 });
 
 test('built-in ZoneMTA config supplies the trusted Host header for its loopback callback', () => {
