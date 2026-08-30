@@ -34,6 +34,7 @@ RUN apk add --no-cache \
     libcrypto3=3.5.8-r0 \
     libssl3=3.5.8-r0 \
     netcat-openbsd=1.234.1-r0 \
+    && rm -f /var/log/apk.log \
     && rm -rf \
         /usr/local/lib/node_modules/npm \
         /usr/local/lib/node_modules/corepack \
