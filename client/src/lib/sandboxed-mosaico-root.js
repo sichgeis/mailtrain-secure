@@ -11,6 +11,7 @@ import {getPublicUrl, getSandboxUrl, getTrustedUrl} from "./urls";
 import {base, unbase} from "../../../shared/templates";
 import {withComponentMixins} from "./decorator-helpers";
 import juice from "juice";
+import {isMosaicoBrowserSupported} from './mosaico-browser-support';
 
 
 @withComponentMixins([
@@ -75,7 +76,7 @@ class MosaicoSandbox extends Component {
     componentDidMount() {
         parentRPC.setMethodHandler('exportState', ::this.exportState);
 
-        if (!Mosaico.isCompatible()) {
+        if (!isMosaicoBrowserSupported()) {
             alert('Update your browser!');
             return;
         }
@@ -223,5 +224,4 @@ export default function() {
         document.getElementById('root')
     );
 };
-
 
