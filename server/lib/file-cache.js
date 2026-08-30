@@ -8,6 +8,7 @@ const fs = require('fs-extra-promise');
 const stream = require('stream');
 const privilegeHelpers = require('./privilege-helpers');
 const synchronized = require('./synchronized');
+const {removeOrphanedCacheFiles} = require('./file-cache-reconciliation');
 const { tmpName } = require('tmp-promise');
 
 const pruneBatchSize = 1000;
@@ -25,16 +26,21 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
     await privilegeHelpers.ensureMailtrainDir(localFilesDir);
 
     let mayNeedPruning = true;
+    let pruning = false;
 
     const getLocalFileName = id => path.join(localFilesDir, id.toString());
 
     const pruneCache = async() => {
-        if (mayNeedPruning) {
+        if (mayNeedPruning && !pruning) {
+            pruning = true;
+            mayNeedPruning = false;
+
             try {
                 const maxSize = cacheConfig.maxSize * 1048576;
 
                 let lastId = null;
                 let cumulativeSize = 0;
+                const indexedFileNames = new Set();
 
                 while (true) {
                     let entriesQry = knex('file_cache').where('type', typeId).orderBy('id', 'desc').limit(pruneBatchSize);
@@ -46,10 +52,18 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
 
                     if (entries.length > 0) {
                         for (const entry of entries) {
+                            indexedFileNames.add(entry.id.toString());
                             cumulativeSize += entry.size;
                             if (cumulativeSize > maxSize) {
-                                await fs.unlinkAsync(getLocalFileName(entry.id));
+                                try {
+                                    await fs.unlinkAsync(getLocalFileName(entry.id));
+                                } catch (err) {
+                                    if (err.code !== 'ENOENT') {
+                                        throw err;
+                                    }
+                                }
                                 await knex('file_cache').where('id', entry.id).del();
+                                indexedFileNames.delete(entry.id.toString());
                             }
 
                             lastId = entry.id;
@@ -58,11 +72,23 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
                         break;
                     }
                 }
-            } catch (err) {
-                log.error('FileCache', err);
-            }
 
-            mayNeedPruning = false;
+                const reconciliation = await removeOrphanedCacheFiles(localFilesDir, indexedFileNames, pruneBatchSize);
+                if (reconciliation.limitReached) {
+                    mayNeedPruning = true;
+                }
+                if (reconciliation.removed > 0) {
+                    log.info('FileCache', `Removed ${reconciliation.removed} orphaned ${typeId} cache files`);
+                }
+                if (reconciliation.skippedDirectories > 0) {
+                    log.warn('FileCache', `Skipped ${reconciliation.skippedDirectories} unexpected directories in ${typeId} cache`);
+                }
+            } catch (err) {
+                mayNeedPruning = true;
+                log.error('FileCache', err);
+            } finally {
+                pruning = false;
+            }
         }
     };
 
