@@ -91,3 +91,9 @@ test('Docker build inputs and npm installs are reproducible', () => {
     assert.match(read('.npmrc'), /audit=false/);
     assert.match(read('.npmrc'), /fund=false/);
 });
+
+test('Webpack provides an explicit browser process shim for Node-oriented editor dependencies', () => {
+    assert.equal(manifest('client').dependencies.process, '0.11.10');
+    assert.match(read('client/webpack.config.js'), /new webpack\.ProvidePlugin\(/);
+    assert.match(read('client/webpack.config.js'), /process:\s*['"]process\/browser['"]/);
+});
