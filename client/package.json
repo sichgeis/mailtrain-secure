@@ -55,7 +55,7 @@
     "prop-types": "^15.7.2",
     "querystringify": "^2.2.0",
     "react": "^16.14.0",
-    "react-ace": "^8.1.0",
+    "react-ace": "^15.0.0",
     "react-ckeditor-component": "^1.1.0",
     "react-color": "^2.19.3",
     "react-day-picker": "^7.4.10",
