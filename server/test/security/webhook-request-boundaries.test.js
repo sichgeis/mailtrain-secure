@@ -124,6 +124,15 @@ test('Mailgun HMAC rejects forged, stale, replayed, and unexpected multipart fie
     assert.throws(() => verifyMailgunSignature({timestamp, token, signature: '0'.repeat(64)}, {...options, replayCache: new ReplayCache()}), /signature/i);
     assert.throws(() => verifyMailgunSignature({timestamp: String(Number(timestamp) - 3600), token, signature}, {...options, replayCache: new ReplayCache()}), /timestamp/i);
     assert.throws(() => assertExpectedFields({event: 'bounced', attachment: 'unexpected'}, ['event', 'campaign_id', 'timestamp', 'token', 'signature']), /unexpected/i);
+
+    const delayedTimestamp = String(Number(timestamp) - 10 * 60);
+    const delayedSignature = crypto.createHmac('sha256', signingKey).update(delayedTimestamp + token).digest('hex');
+    assert.doesNotThrow(() => verifyMailgunSignature({timestamp: delayedTimestamp, token, signature: delayedSignature}, {
+        signingKey,
+        now: () => now,
+        maxClockSkewMs: 5 * 60 * 1000,
+        maxDeliveryAgeMs: 30 * 60 * 1000
+    }));
 });
 
 test('Mailgun multipart parsing rejects files, oversized fields, and excessive concurrent parts', async () => {
