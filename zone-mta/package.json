@@ -17,7 +17,7 @@
     },
     "dependencies": {
         "@zone-eu/zone-mta": "3.10.18",
-        "libmime": "5.4.1",
+        "libmime": "5.4.2",
         "nodemailer": "9.0.6",
         "zonemta-delivery-counters": "1.0.1",
         "zonemta-limiter": "1.0.0",
