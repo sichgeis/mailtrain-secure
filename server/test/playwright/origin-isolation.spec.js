@@ -170,13 +170,29 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {
     const cacheType = 'mosaico-images';
     const params = '37,19';
-    const cacheKey = `placeholder_${params}`;
+    const sourceFilename = 'cache-persistence-fixture.png';
+    const sourceRelativeUrl = `files/mosaicoTemplate/file/1/${sourceFilename}`;
+    const sourceUrl = `${publicOrigin}/${sourceRelativeUrl}`;
+    const cacheKey = `${sourceRelativeUrl}_resize_${params}`;
     const cacheDir = path.join(__dirname, '..', '..', 'files', 'cache', cacheType);
+    const durableDir = path.join(__dirname, '..', '..', 'files', 'mosaicoTemplate', 'file', '1');
+    const durableFile = path.join(durableDir, sourceFilename);
+    const sourceBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 
     await knex('file_cache').where({type: cacheType, key: cacheKey}).del();
+    await knex('files_mosaico_template_file').where({entity: 1, filename: sourceFilename}).del();
     await fs.mkdir(cacheDir, {recursive: true});
+    await fs.mkdir(durableDir, {recursive: true});
+    await fs.writeFile(durableFile, sourceBytes);
+    await knex('files_mosaico_template_file').insert({
+        entity: 1,
+        filename: sourceFilename,
+        originalname: sourceFilename,
+        mimetype: 'image/png',
+        size: sourceBytes.length
+    });
 
-    const response = await request.get(`${trustedOrigin}/mosaico/img?method=placeholder&params=${params}`);
+    const response = await request.get(`${trustedOrigin}/mosaico/img?src=${encodeURIComponent(sourceUrl)}&method=resize&params=${params}`);
     expect(response.status()).toBe(200);
     expect((await response.body()).length).toBeGreaterThan(0);
 
@@ -196,4 +212,6 @@ test('a real Mosaico image response persists across cache reconciliation', async
 
     await knex('file_cache').where({id: row.id}).del();
     await fs.unlink(cachedFile);
+    await knex('files_mosaico_template_file').where({entity: 1, filename: sourceFilename}).del();
+    await fs.unlink(durableFile);
 });

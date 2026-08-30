@@ -294,6 +294,10 @@ jobs:
       - name: Install Playwright Chromium
         working-directory: server
         run: npx --no-install playwright install --with-deps chromium
+      - name: Install the production image-processing runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends imagemagick
       - name: Initialize synthetic database
         working-directory: server
         run: npm run sqlinit
