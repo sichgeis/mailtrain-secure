@@ -15,11 +15,9 @@ const { tUI } = require('../lib/translate');
 const messageSender = require('../lib/message-sender');
 const {getSystemSendConfigurationId} = require('../../shared/send-configurations');
 
-const bluebird = require('bluebird');
-
-const bcrypt = require('bcrypt-nodejs');
-const bcryptHash = bluebird.promisify(bcrypt.hash.bind(bcrypt));
-const bcryptCompare = bluebird.promisify(bcrypt.compare.bind(bcrypt));
+const bcrypt = require('bcryptjs');
+const bcryptHash = password => bcrypt.hash(password, 12);
+const bcryptCompare = (password, hash) => bcrypt.compare(password, hash);
 
 const passport = require('../lib/passport');
 
@@ -160,7 +158,7 @@ async function _validateAndPreprocess(tx, entity, isCreate, isOwnAccount) {
             throw new Error('Invalid password');
         }
 
-        entity.password = await bcryptHash(entity.password, null, null);
+        entity.password = await bcryptHash(entity.password);
     } else {
         delete entity.password;
     }
@@ -425,7 +423,7 @@ async function resetPassword(username, resetToken, password) {
                 throw new Error('Invalid password');
             }
 
-            password = await bcryptHash(password, null, null);
+            password = await bcryptHash(password);
 
             await tx('users').where({username}).update({
                 password,

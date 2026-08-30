@@ -43,3 +43,49 @@ test('local OpenPGP adapter signs mail with the maintained OpenPGP API', async (
     assert.match(result, /-----BEGIN PGP SIGNATURE-----/);
     assert.match(result, /Synthetic message body/);
 });
+
+test('local OpenPGP adapter encrypts MIME content that the recipient can decrypt', async () => {
+    const passphrase = 'synthetic-test-passphrase';
+    const { privateKey, publicKey } = await openpgp.generateKey({
+        type: 'ecc',
+        curve: 'curve25519Legacy',
+        userIDs: [{ name: 'Mailtrain Recipient', email: 'recipient@example.test' }],
+        passphrase
+    });
+    const source = [
+        'From: sender@example.test',
+        'To: recipient@example.test',
+        'Subject: Encrypted regression',
+        'Content-Type: text/plain; charset=utf-8',
+        'Content-Transfer-Encoding: 8bit',
+        '',
+        'Synthetic café message'
+    ].join('\r\n');
+
+    const result = await transformMessage({ encryptionKeys: [publicKey], shouldSign: false }, source);
+    const armoredMessage = result.match(/-----BEGIN PGP MESSAGE-----[\s\S]+?-----END PGP MESSAGE-----/)[0];
+    const encryptedMessage = await openpgp.readMessage({ armoredMessage });
+    const decryptedKey = await openpgp.decryptKey({
+        privateKey: await openpgp.readPrivateKey({ armoredKey: privateKey }),
+        passphrase
+    });
+    const decrypted = await openpgp.decrypt({ message: encryptedMessage, decryptionKeys: decryptedKey });
+
+    assert.match(result, /Content-Type: multipart\/encrypted;/);
+    assert.match(decrypted.data, /Content-Transfer-Encoding: 8bit/);
+    assert.match(decrypted.data, /Synthetic café message/);
+});
+
+test('local OpenPGP adapter fails closed for an invalid signing-key passphrase', async () => {
+    const { privateKey } = await openpgp.generateKey({
+        type: 'ecc',
+        curve: 'curve25519Legacy',
+        userIDs: [{ name: 'Mailtrain Test', email: 'mailtrain@example.test' }],
+        passphrase: 'correct-passphrase'
+    });
+
+    await assert.rejects(
+        transformMessage({ signingKey: privateKey, passphrase: 'wrong-passphrase' }, 'Subject: Test\r\n\r\nBody'),
+        /passphrase|decrypt/i
+    );
+});

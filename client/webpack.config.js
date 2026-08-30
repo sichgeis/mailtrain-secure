@@ -21,8 +21,24 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
         hashFunction: 'sha256'
     },
+    resolve: {
+        fallback: {
+            fs: false,
+            http: false,
+            https: false,
+            os: false,
+            path: require.resolve('path-browserify'),
+            url: require.resolve('url/')
+        }
+    },
     module: {
         rules: [
+            {
+                test: /\.m?js$/,
+                resolve: {
+                    fullySpecified: false
+                }
+            },
             {
                 test: /\.(js|jsx)$/,
                 exclude: path.join(__dirname, 'node_modules'),
@@ -32,6 +48,7 @@ module.exports = {
                         options: {
                             presets: [
                                 ['@babel/preset-env', {
+                                    loose: true,
                                     targets: {
                                         "chrome": "58",
                                         "edge": "15",
@@ -63,14 +80,12 @@ module.exports = {
             },
             {
                 test: /\.(png|jpg|gif)$/,
-                use: [
-                    {
-                        loader: 'url-loader',
-                        options: {
-                            limit: 8192 // inline base64 URLs for <=8k images, direct URLs for the rest
-                        }
+                type: 'asset',
+                parser: {
+                    dataUrlCondition: {
+                        maxSize: 8192
                     }
-                ]
+                }
             },
             {
                 test: /\.scss$/,
@@ -80,8 +95,9 @@ module.exports = {
                     {
                         loader: 'css-loader',
                         options: {
-                            modules: true,
-                            localIdentName: '[path][name]__[local]--[hash:base64:5]'
+                            modules: {
+                                localIdentName: '[path][name]__[local]--[hash:base64:5]'
+                            }
                         }
                     },
                     'sass-loader'
@@ -89,9 +105,7 @@ module.exports = {
             },
             {
                 test: /\.(svg|otf|woff2|woff|ttf|eot)$/,
-                use: [
-                    'url-loader'
-                ]
+                type: 'asset'
             }
         ]
     },
@@ -101,13 +115,15 @@ module.exports = {
         mailtrainConfig: 'mailtrainConfig'
     },
     plugins: [
-      new CopyPlugin([
-        { from: './node_modules/jquery/dist/jquery.min.js', to: path.resolve(__dirname, 'dist') },
-        { from: './node_modules/popper.js/dist/umd/popper.min.js', to: path.resolve(__dirname, 'dist') },
-        { from: './node_modules/bootstrap/dist/js/bootstrap.min.js', to: path.resolve(__dirname, 'dist') },
-        { from: './node_modules/@coreui/coreui/dist/js/coreui.min.js', to: path.resolve(__dirname, 'dist') },
-        { from: './node_modules/@fortawesome/fontawesome-free/webfonts/', to: path.resolve(__dirname, 'dist', 'webfonts'), toType: 'dir'}
-      ]),
+      new CopyPlugin({
+        patterns: [
+          { from: './node_modules/jquery/dist/jquery.min.js', to: path.resolve(__dirname, 'dist') },
+          { from: './node_modules/popper.js/dist/umd/popper.min.js', to: path.resolve(__dirname, 'dist') },
+          { from: './node_modules/bootstrap/dist/js/bootstrap.min.js', to: path.resolve(__dirname, 'dist') },
+          { from: './node_modules/@coreui/coreui/dist/js/coreui.min.js', to: path.resolve(__dirname, 'dist') },
+          { from: './node_modules/@fortawesome/fontawesome-free/webfonts/', to: path.resolve(__dirname, 'dist', 'webfonts') }
+        ]
+      }),
     ],
     watchOptions: {
         ignored: 'node_modules/',

@@ -11,7 +11,7 @@ const mjml2html = require('mjml');
 const hbs = require('hbs');
 const juice = require('juice');
 const he = require('he');
-const htmlToText = require('html-to-text');
+const {convert: htmlToText} = require('html-to-text');
 
 const fs = require('fs-extra');
 
@@ -174,7 +174,7 @@ function _formatTemplateSimple(source, mergeTags, isHTML) {
         return isHTML ? he.encode((containsHTML ? value : value.replace(/(?:\r\n|\r|\n)/g, '<br/>')), {
             useNamedReferences: true,
             allowUnsafeSymbols: true
-        }) : (containsHTML ? htmlToText.fromString(value) : value);
+        }) : (containsHTML ? htmlToText(value) : value);
     };
 
     return source.replace(/\[([a-z0-9_.]+)(?:\/([^\]]+))?\]/ig, (match, identifier, fallback) => {
@@ -278,4 +278,3 @@ module.exports = {
     formatCampaignTemplate,
     formatTemplate
 };
-

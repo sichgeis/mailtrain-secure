@@ -18,10 +18,13 @@ function manifest(workspace) {
 }
 
 test('every shipped JavaScript workspace targets only Node 24 LTS', () => {
+    assert.equal(read('.nvmrc').trim(), '24.20.0');
     for (const workspace of workspaces) {
         assert.equal(manifest(workspace).engines.node, '>=24.0.0 <25', workspace);
+        assert.equal(manifest(workspace).packageManager, 'npm@11.19.0', workspace);
         assert.equal(JSON.parse(read(`${workspace}/package-lock.json`)).lockfileVersion, 3, workspace);
     }
+    assert.match(read('.github/workflows/security-ci.yml'), /NODE_VERSION:\s*'24\.20\.0'/);
 });
 
 test('abandoned high-risk runtime packages are not production dependencies', () => {

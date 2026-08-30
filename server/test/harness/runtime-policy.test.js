@@ -13,7 +13,7 @@ function readPackage(directory) {
 
 test('the test harness runs on the supported Node 24 LTS line', () => {
     assert.equal(Number.parseInt(process.versions.node, 10), 24);
-    assert.equal(fs.readFileSync(path.join(repositoryRoot, '.nvmrc'), 'utf8').trim(), '24');
+    assert.equal(fs.readFileSync(path.join(repositoryRoot, '.nvmrc'), 'utf8').trim(), '24.20.0');
     assert.equal(readPackage('server').engines.node, '>=24.0.0 <25');
     assert.equal(readPackage('client').engines.node, '>=24.0.0 <25');
 });

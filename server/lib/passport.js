@@ -172,13 +172,17 @@ function clearSessionCookies(res) {
 }
 
 module.exports.restLogout = (req, res, next) => {
-    req.logout();
-    req.session.destroy(err => {
+    req.logout(err => {
         if (err) {
             return next(err);
         }
-        clearSessionCookies(res);
-        res.json();
+        req.session.destroy(err => {
+            if (err) {
+                return next(err);
+            }
+            clearSessionCookies(res);
+            res.json();
+        });
     });
 };
 
@@ -288,13 +292,17 @@ if (CasStrategy) {
 
     module.exports.authenticateCas = passport.authenticate('cas', { failureRedirect: '/login?cas-login-error' });
     module.exports.logoutCas = function (req, res, next) {
-        req.logout();
-        req.session.destroy(err => {
+        req.logout(err => {
             if (err) {
                 return next(err);
             }
-            clearSessionCookies(res);
-            cas.logout(req, res, config.www.trustedUrlBase+'/?cas-logout-success');
+            req.session.destroy(err => {
+                if (err) {
+                    return next(err);
+                }
+                clearSessionCookies(res);
+                cas.logout(req, res, config.www.trustedUrlBase+'/?cas-logout-success');
+            });
         });
     };
 

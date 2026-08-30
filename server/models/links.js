@@ -5,8 +5,8 @@ const campaigns = require('./campaigns');
 const lists = require('./lists');
 const subscriptions = require('./subscriptions');
 const contextHelpers = require('../lib/context-helpers');
-const geoip = require('geoip-ultralight');
-const uaParser = require('device');
+const geoip = require('../lib/geoip');
+const {deviceType} = require('../lib/user-agent');
 const he = require('he');
 const { getPublicUrl } = require('../lib/urls');
 const tools = require('../lib/tools');
@@ -29,10 +29,7 @@ async function countLink(remoteIp, userAgent, campaignCid, listCid, subscription
         const subscription = await subscriptions.getByCidTx(tx, contextHelpers.getAdminContext(), list.id, subscriptionCid);
 
         const country = geoip.lookupCountry(remoteIp) || null;
-        const device = uaParser(userAgent, {
-            unknownUserAgentDeviceType: 'desktop',
-            emptyUserAgentDeviceType: 'desktop'
-        });
+        const device = deviceType(userAgent);
         const now = new Date();
 
         const _countLink = async (clickLinkId, incrementOnDup) => {
@@ -44,7 +41,7 @@ async function countLink(remoteIp, userAgent, campaignCid, listCid, subscription
                         subscription: subscription.id,
                         link: clickLinkId,
                         ip: remoteIp,
-                        device_type: device.type,
+                        device_type: device,
                         country
                     }).toSQL();
 

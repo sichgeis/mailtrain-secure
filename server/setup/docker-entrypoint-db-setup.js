@@ -3,10 +3,8 @@
 const log = require('../lib/log');
 const dbcheck = require('../lib/dbcheck');
 const knex = require('../lib/knex');
-const {getAdminId} = require("../../shared/users");
-const bluebird = require('bluebird');
-const bcrypt = require('bcrypt-nodejs');
-const bcryptHash = bluebird.promisify(bcrypt.hash.bind(bcrypt));
+const {getAdminId} = require('../../shared/users');
+const bcrypt = require('bcryptjs');
 const {applyAdminBootstrap} = require('../lib/admin-bootstrap');
 const {getStorage, lookupHash} = require('../lib/secret-storage');
 
@@ -21,7 +19,7 @@ async function init() {
         existingAdmin,
         password: process.env.ADMIN_PASSWORD,
         accessToken: process.env.ADMIN_ACCESS_TOKEN,
-        hashPassword: password => bcryptHash(password, null, null),
+        hashPassword: password => bcrypt.hash(password, 12),
         hashAccessToken: token => ({
             hash: lookupHash(token, 'access-token'),
             keyId: getStorage({required: true}).keyId

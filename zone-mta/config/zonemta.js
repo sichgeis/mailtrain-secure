@@ -1,3 +1,5 @@
+const environment = require('process').env;
+
 module.exports = {
 
 
@@ -73,8 +75,8 @@ module.exports = {
         },
         'mailtrain-main': {
             enabled: ['main'],
-            bounceUrl: process.env.MAILTRAIN_ZONE_MTA_BOUNCE_URL,
-            bounceToken: process.env.MAILTRAIN_ZONE_MTA_TOKEN
+            bounceUrl: environment.MAILTRAIN_ZONE_MTA_BOUNCE_URL,
+            bounceToken: environment.MAILTRAIN_ZONE_MTA_TOKEN
         },
         'mailtrain-receiver': {
             enabled: ['receiver'],

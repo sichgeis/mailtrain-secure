@@ -20,7 +20,7 @@ const { SubscriptionStatus, SubscriptionSource } = require('../../shared/lists')
 const openpgp = require('openpgp');
 const cors = require('cors');
 const cache = require('memory-cache');
-const geoip = require('geoip-ultralight');
+const geoip = require('../lib/geoip');
 const passport = require('../lib/passport');
 
 const tools = require('../lib/tools');
@@ -641,9 +641,9 @@ router.postAsync('/publickey', passport.parseForm, async (req, res) => {
 
     let privKey;
     try {
-        privKey = openpgp.key.readArmored(configItems.pgpPrivateKey).keys[0];
-        if (configItems.pgpPassphrase && !privKey.decrypt(configItems.pgpPassphrase)) {
-            privKey = false;
+        privKey = await openpgp.readPrivateKey({armoredKey: configItems.pgpPrivateKey});
+        if (configItems.pgpPassphrase) {
+            privKey = await openpgp.decryptKey({privateKey: privKey, passphrase: configItems.pgpPassphrase});
         }
     } catch (E) {
         // just ignore if failed
