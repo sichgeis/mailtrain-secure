@@ -97,3 +97,8 @@ test('Webpack provides an explicit browser process shim for Node-oriented editor
     assert.match(read('client/webpack.config.js'), /new webpack\.ProvidePlugin\(/);
     assert.match(read('client/webpack.config.js'), /process:\s*['"]process\/browser['"]/);
 });
+
+test('Webpack preserves default-object CSS module imports used by the legacy client', () => {
+    const webpackConfig = read('client/webpack.config.js');
+    assert.match(webpackConfig, /modules:\s*\{[\s\S]*?namedExport:\s*false/);
+});
