@@ -2,10 +2,12 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const {Readable} = require('node:stream');
 const test = require('node:test');
 const yaml = require('js-yaml');
-const {assertAggregateUploadSize} = require('../../lib/upload-limits');
+const {assertAggregateUploadSize, createAggregateDiskStorage} = require('../../lib/upload-limits');
 const {
     applyAdminBootstrap,
     validateAdminPassword
@@ -105,4 +107,25 @@ test('campaign uploads and OpenPGP buffering have explicit production bounds', (
 
     assert.doesNotThrow(() => assertAggregateUploadSize([{size: 8}, {size: 8}], 16));
     assert.throws(() => assertAggregateUploadSize([{size: 8}, {size: 9}], 16), error => error.status === 413);
+});
+
+test('aggregate upload storage aborts before writing beyond the request budget', async () => {
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-upload-limit-'));
+    const storage = createAggregateDiskStorage({destination, maxTotalBytes: 16});
+    const req = {};
+    const store = size => new Promise(resolve => storage._handleFile(req, {
+        stream: Readable.from([Buffer.alloc(size)]),
+        originalname: 'synthetic.bin',
+        mimetype: 'application/octet-stream'
+    }, (err, file) => resolve({err, file})));
+
+    const first = await store(10);
+    assert.equal(first.err, null);
+    const second = await store(10);
+    assert.equal(second.err.status, 413);
+    const bytesOnDisk = fs.readdirSync(destination)
+        .reduce((total, filename) => total + fs.statSync(path.join(destination, filename)).size, 0);
+    assert.ok(bytesOnDisk <= 16);
+    await new Promise(resolve => storage._removeFile(req, first.file, resolve));
+    fs.rmSync(destination, {recursive: true, force: true});
 });
