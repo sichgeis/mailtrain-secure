@@ -63,8 +63,7 @@ jobs:
         run: npm run build
       - name: Build and inspect hardened production image
         run: |
-          docker buildx create --driver docker-container --use --name mailtrain-security-ci
-          docker buildx build --load --sbom=true --tag mailtrain-security-ci:${{ github.sha }} .
+          docker build --tag mailtrain-security-ci:${{ github.sha }} .
           docker image inspect mailtrain-security-ci:${{ github.sha }} --format '{{.Id}}' > mailtrain-image-digest.txt
           test "$(docker image inspect mailtrain-security-ci:${{ github.sha }} --format '{{.Config.User}}')" = 'mailtrain:mailtrain'
           test "$(docker run --rm --entrypoint node mailtrain-security-ci:${{ github.sha }} -p 'process.getuid()+":"+process.getgid()')" = '10001:10001'

@@ -73,8 +73,10 @@ test('CI fails on high production advisories in every workspace', () => {
 
 test('CI emits an SBOM and scans the exact built image with a pinned scanner', () => {
     const workflow = read('.github/workflows/security-ci.yml');
-    assert.match(workflow, /docker build[^\n]*--sbom=true/);
+    assert.match(workflow, /anchore\/sbom-action@[0-9a-f]{40}/);
+    assert.match(workflow, /image:\s*mailtrain-security-ci:\$\{\{ github\.sha \}\}/);
     assert.match(workflow, /aquasecurity\/trivy-action@[0-9a-f]{40}/);
+    assert.match(workflow, /image-ref:\s*mailtrain-security-ci:\$\{\{ github\.sha \}\}/);
     assert.match(workflow, /severity:\s*['"]?CRITICAL,HIGH/);
     assert.match(workflow, /exit-code:\s*['"]?1/);
     assert.match(workflow, /cyclonedx|spdx/i);
