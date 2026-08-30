@@ -263,22 +263,32 @@ async function getByAccessToken(accessToken) {
     if (storage) {
         return await knex.transaction(async tx => {
             const candidates = lookupCandidates(accessToken, 'access-token');
-            const user = await tx('users').select(['id', 'username', 'name', 'email', 'namespace', 'role', 'access_token_key_id'])
+            const plaintextCompatibility = allowPlaintext();
+            const user = await tx('users').select([
+                'id', 'username', 'name', 'email', 'namespace', 'role',
+                'access_token', 'access_token_hash', 'access_token_key_id'
+            ])
                 .where(builder => {
                     for (const candidate of candidates) {
                         builder.orWhere({access_token_key_id: candidate.keyId, access_token_hash: candidate.hash});
+                    }
+                    if (plaintextCompatibility) {
+                        builder.orWhere({access_token: accessToken});
                     }
                 }).forUpdate().first();
             if (!user) {
                 shares.throwPermissionDenied();
             }
-            if (user.access_token_key_id !== storage.keyId) {
+            if (user.access_token !== null || user.access_token_key_id !== storage.keyId) {
                 await tx('users').where({id: user.id}).update({
+                    access_token: null,
                     access_token_hash: lookupHash(accessToken, 'access-token'),
                     access_token_key_id: storage.keyId
                 });
             }
             await shares.enforceEntityPermissionTx(tx, contextHelpers.getAdminContext(), 'namespace', user.namespace, 'manageUsers');
+            delete user.access_token;
+            delete user.access_token_hash;
             delete user.access_token_key_id;
             return user;
         });
@@ -384,37 +394,46 @@ async function sendPasswordReset(locale, usernameOrEmail) {
 async function isPasswordResetTokenValid(username, resetToken) {
     enforce(passport.isAuthMethodLocal, 'Local user management is required');
 
-    let query = knex('users').select(['id']).where({username}).andWhere('reset_expire', '>', new Date());
-    if (getStorage()) {
+    return await knex.transaction(async tx => !!await findPasswordResetUser(tx, username, resetToken));
+}
+
+async function findPasswordResetUser(tx, username, resetToken) {
+    const storage = getStorage();
+    const plaintextCompatibility = allowPlaintext();
+    const query = tx('users').select([
+        'id', 'reset_token', 'reset_token_hash', 'reset_token_key_id'
+    ]).where({username}).andWhere('reset_expire', '>', new Date());
+
+    if (storage) {
         const candidates = lookupCandidates(resetToken, 'reset-token');
-        query = query.andWhere(builder => {
+        query.andWhere(builder => {
             for (const candidate of candidates) {
                 builder.orWhere({reset_token_key_id: candidate.keyId, reset_token_hash: candidate.hash});
             }
+            if (plaintextCompatibility) {
+                builder.orWhere({reset_token: resetToken});
+            }
         });
     } else {
-        query = query.andWhere({reset_token: resetToken});
+        query.andWhere({reset_token: resetToken});
     }
-    const user = await query.first();
-    return !!user;
+
+    const user = await query.forUpdate().first();
+    if (user && storage && (user.reset_token !== null || user.reset_token_key_id !== storage.keyId)) {
+        await tx('users').where({id: user.id}).update({
+            reset_token: null,
+            reset_token_hash: lookupHash(resetToken, 'reset-token'),
+            reset_token_key_id: storage.keyId
+        });
+    }
+    return user;
 }
 
 async function resetPassword(username, resetToken, password) {
     enforce(passport.isAuthMethodLocal, 'Local user management is required');
 
     await knex.transaction(async tx => {
-        let query = tx('users').select(['id']).where({username}).andWhere('reset_expire', '>', new Date());
-        if (getStorage()) {
-            const candidates = lookupCandidates(resetToken, 'reset-token');
-            query = query.andWhere(builder => {
-                for (const candidate of candidates) {
-                    builder.orWhere({reset_token_key_id: candidate.keyId, reset_token_hash: candidate.hash});
-                }
-            });
-        } else {
-            query = query.andWhere({reset_token: resetToken});
-        }
-        const user = await query.forUpdate().first();
+        const user = await findPasswordResetUser(tx, username, resetToken);
 
         if (user) {
             const passwordValidatorResults = passwordValidator.test(password);

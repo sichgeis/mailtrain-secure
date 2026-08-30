@@ -68,6 +68,10 @@ if (mode === 'app') {
         sandboxUrlBase: `https://${sandboxHost}`,
         publicUrlBase: `https://${publicHost}`
     };
+    configuration.security.sessions = {
+        name: '__Host-mailtrain.sid',
+        secure: true
+    };
     configuration.redis = {enabled: true, host: 'redis', port: 6379, db: 5, password: redisPassword};
     configuration.builtinZoneMTA = {
         enabled: true,
