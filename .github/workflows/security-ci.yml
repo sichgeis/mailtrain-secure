@@ -49,6 +49,11 @@ jobs:
       - name: Build browser assets
         working-directory: client
         run: npm run build
+      - name: Build and inspect hardened production image
+        run: |
+          docker build --tag mailtrain-security-ci:${{ github.sha }} .
+          test "$(docker image inspect mailtrain-security-ci:${{ github.sha }} --format '{{.Config.User}}')" = 'mailtrain:mailtrain'
+          test "$(docker run --rm --entrypoint node mailtrain-security-ci:${{ github.sha }} -p 'process.getuid()+":"+process.getgid()')" = '10001:10001'
       - name: Capture production dependency audit baselines
         run: |
           npm audit --omit=dev --json --prefix server > server-production-audit.json || true

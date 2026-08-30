@@ -11,3 +11,5 @@ server/test/playwright/playwright-report/
 server/test/playwright/test-results/
 .DS_Store
 dump.rdb
+deploy/netcup/.env
+deploy/netcup/secrets/

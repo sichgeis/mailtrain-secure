@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
 const config = require('./config');
 const log = require('./log');
 const {SecretEnvelope, loadSecretKeyring} = require('./secret-envelope');
@@ -11,10 +12,23 @@ let cached;
 let warned = false;
 const SECRET_ENVIRONMENT_VARIABLES = [
     'MAILTRAIN_MASTER_KEY',
+    'MAILTRAIN_MASTER_KEY_FILE',
     'MAILTRAIN_MASTER_KEY_ID',
     'MAILTRAIN_PREVIOUS_MASTER_KEYS',
+    'MAILTRAIN_PREVIOUS_MASTER_KEYS_FILE',
     'MAILTRAIN_ALLOW_PLAINTEXT_SECRETS'
 ];
+
+function readSecretFile(filename, label) {
+    if (!filename) {
+        return undefined;
+    }
+    const stat = fs.statSync(filename);
+    if (!stat.isFile() || stat.size < 1 || stat.size > 65536) {
+        throw new Error(`${label} file must be a non-empty regular file no larger than 64 KiB`);
+    }
+    return fs.readFileSync(filename, 'utf8').trim();
+}
 
 function bool(value, fallback = false) {
     if (value === undefined || value === null || value === '') {
@@ -26,15 +40,20 @@ function bool(value, fallback = false) {
 function settings() {
     const configured = config.security && config.security.secrets || {};
     let previousKeys = {};
-    if (process.env.MAILTRAIN_PREVIOUS_MASTER_KEYS) {
+    const previousKeysJson = readSecretFile(
+        process.env.MAILTRAIN_PREVIOUS_MASTER_KEYS_FILE,
+        'Previous master keys'
+    ) || process.env.MAILTRAIN_PREVIOUS_MASTER_KEYS;
+    if (previousKeysJson) {
         try {
-            previousKeys = JSON.parse(process.env.MAILTRAIN_PREVIOUS_MASTER_KEYS);
+            previousKeys = JSON.parse(previousKeysJson);
         } catch (err) {
-            throw new Error('MAILTRAIN_PREVIOUS_MASTER_KEYS must be a JSON object');
+            throw new Error('Previous master keys must be a JSON object');
         }
     }
     return {
-        masterKey: process.env.MAILTRAIN_MASTER_KEY || configured.masterKey,
+        masterKey: readSecretFile(process.env.MAILTRAIN_MASTER_KEY_FILE, 'Master key') ||
+            process.env.MAILTRAIN_MASTER_KEY || configured.masterKey,
         keyId: process.env.MAILTRAIN_MASTER_KEY_ID || configured.keyId,
         previousKeys,
         allowPlaintextCompatibility: bool(

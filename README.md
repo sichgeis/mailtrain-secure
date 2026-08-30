@@ -100,7 +100,7 @@ Thus, by running this script below, you agree with the Let's Encrypt's Terms of 
 
 6. Open the trusted endpoint (like `https://mailtrain.example.com`)
 
-7. Authenticate as `admin`:`test`
+7. Authenticate as `admin` with the strong password configured during initialization. No default administrator password is provided.
 
 8. Update your password under admin/Account
 
@@ -163,13 +163,13 @@ All endpoints (trusted, sandbox, public) will provide only HTTP as follows:
 
 6. Open the trusted endpoint http://localhost:3000
 
-7. Authenticate as `admin`:`test`
+7. Authenticate as `admin` with the strong password configured during initialization. No default administrator password is provided.
 
 
 
 ### Deployment with Docker and Docker compose
 
-This setup starts a stack composed of Mailtrain, MongoDB, Redis, and MariaDB. It will setup a locally accessible Mailtrain instance with HTTP endpoints as follows.
+The root Compose file is retained for local compatibility testing and must not be exposed publicly. For a hardened Traefik deployment with private datastores and three HTTPS origins, use and review [`deploy/netcup`](deploy/netcup/README.md). The local stack uses HTTP endpoints as follows.
 - http://localhost:3000 - trusted endpoint
 - http://localhost:3003 - sandbox endpoint
 - http://localhost:3004 - public endpoint
@@ -199,7 +199,7 @@ These are the steps to start Mailtrain via docker-compose:
 
 3. Open the trusted endpoint http://localhost:3000
 
-4. Authenticate as `admin`:`test`
+4. Authenticate as `admin` with the required `ADMIN_PASSWORD` supplied before initialization.
 
 The instructions above use an automatically built Docker image on DockerHub (https://hub.docker.com/r/mailtrain/mailtrain). If you want to build the Docker image yourself (e.g. when doing development), use the `docker-compose-local.yml` located in the project's root directory.
 
@@ -261,6 +261,8 @@ Provider webhook verification and request-limit migration is documented in [Webh
 | WWW_HOST         | sets the address that the server binds to (default: 0.0.0.0)          |
 | WWW_PROXY        | exact trusted proxy hop count/address policy; Compose default: `1`    |
 | WWW_SECRET       | required persistent session secret: at least 32 random bytes encoded as base64url |
+| MAILTRAIN_MASTER_KEY | required 32-byte base64 encryption key; prefer the file-mounted Netcup template in production |
+| MAILTRAIN_MASTER_KEY_ID | required non-secret identifier for the active encryption key |
 | SESSION_COOKIE_SECURE | requires HTTPS-only session cookies; production Docker default: `true` |
 | MONGO_HOST       | sets mongo host (default: mongo)                                      |
 | WITH_REDIS       | enables or disables redis (default: true)                             |
@@ -270,7 +272,7 @@ Provider webhook verification and request-limit migration is documented in [Webh
 | MYSQL_PORT       | sets mysql port (default: 3306)                                       |
 | MYSQL_DATABASE   | sets mysql database (default: mailtrain)                              |
 | MYSQL_USER       | sets mysql user (default: mailtrain)                                  |
-| MYSQL_PASSWORD   | sets mysql password (default: mailtrain)                              |
+| MYSQL_PASSWORD   | required database password; no production default is provided         |
 | WITH_LDAP        | use if you want to enable LDAP authentication                         |
 | LDAP_HOST        | LDAP Host for authentication (default: ldap)                          |
 | LDAP_PORT        | LDAP port (default: 389)                                              |

@@ -86,7 +86,7 @@ After the install script has finished and you see a success message then you sho
 Navigate to http://yourdomain.com where yourdomain.com is the address of your server. Click on the Sign In link in the right top corner of the page. Authenticate with the following credentials:
 
   * Username: **admin**
-  * Password: **test**
+  * Password: the strong value explicitly supplied during initialization
 
 Once authenticated, click on your username in the right top corner of the page and select "Account". Now you should be able to change your default password.
 
@@ -166,7 +166,9 @@ The above steps will have the following effect:
 If you run Mailtrain on a VPS, you will have to find the PTR configuration somewhere in your administration interface or ask your provider to help you.
 
 
-### Simple Install (Docker)
+### Legacy simple install (Docker)
+
+This section describes an older development-oriented stack. It is not suitable for public production deployment and no supported build has a default administrator password. Use the hardened `deploy/netcup` template from the repository root for production.
 #### Requirements:
 
   * [Docker](https://www.docker.com/)
@@ -180,7 +182,7 @@ If you run Mailtrain on a VPS, you will have to find the PTR configuration somew
 * Bring up the stack with: `docker-compose up -d`, by default it will use the included `docker-compose.yml` file and override some configurations taken from the `docker-compose.override.yml` file.
 * If you want to use only / copy the `docker-compose.yml` file (for example, if you were deploying with Rancher), you may need to first run `docker-compose build` to make sure your system has a Docker image `mailtrain:latest`.
 * Open [http://localhost:3000/](http://localhost:3000/) (change the host name `localhost` to the name of the host where you are deploying the system).
-* Authenticate as user `admin` with password `test`
+* Authenticate as `admin` with the strong password explicitly supplied during initialization.
 * Navigate to [http://localhost:3000/settings](http://localhost:3000/settings) and update service configuration.
 * Navigate to [http://localhost:3000/users/account](http://localhost:3000/users/account) and update user information and password.
 
@@ -194,7 +196,7 @@ If you run Mailtrain on a VPS, you will have to find the PTR configuration somew
   3. Copy [config/default.toml](config/default.toml) as `config/production.toml` and update MySQL and any other settings in it
   4. Run the server `NODE_ENV=production npm start`
   5. Open [http://localhost:3000/](http://localhost:3000/)
-  6. Authenticate as `admin`:`test`
+  6. Authenticate as `admin` with the strong password explicitly supplied during initialization.
   7. Navigate to [http://localhost:3000/settings](http://localhost:3000/settings) and update service configuration
   8. Navigate to [http://localhost:3000/users/account](http://localhost:3000/users/account) and update user information and password
 

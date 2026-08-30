@@ -10,7 +10,7 @@ Generate a dedicated 32-byte master key in a secret-management environment:
 openssl rand -base64 32
 ```
 
-Mount the value into the application as `MAILTRAIN_MASTER_KEY` and assign a non-secret identifier such as `MAILTRAIN_MASTER_KEY_ID=production-2026-01`. The key must remain outside Git, Compose files, logs, command-line arguments, database backups, and application configuration stored in the database.
+Mount the value into the application as a read-only secret file and set `MAILTRAIN_MASTER_KEY_FILE` to its path. Assign a non-secret identifier such as `MAILTRAIN_MASTER_KEY_ID=production-2026-01`. `MAILTRAIN_MASTER_KEY` remains available for host/systemd compatibility, but container deployments should use the file form so raw key bytes do not appear in container metadata. The key must remain outside Git, Compose files, logs, command-line arguments, database backups, and application configuration stored in the database.
 
 New deployments require both variables. An existing deployment may temporarily set `MAILTRAIN_ALLOW_PLAINTEXT_SECRETS=true` while preparing the migration, but new secret writes and token issuance still require a master key. Remove the compatibility flag only after verification succeeds.
 
@@ -32,7 +32,7 @@ After a successful staging rehearsal, repeat the backup, dry-run, migration, ver
 
 ## Rotation
 
-Install a new `MAILTRAIN_MASTER_KEY` and `MAILTRAIN_MASTER_KEY_ID`. Temporarily provide the prior keys as a JSON object in `MAILTRAIN_PREVIOUS_MASTER_KEYS`, sourced from the secret manager rather than a checked-in file:
+Install a new master-key secret file and `MAILTRAIN_MASTER_KEY_ID`. Temporarily provide prior keys as a JSON object in a read-only file referenced by `MAILTRAIN_PREVIOUS_MASTER_KEYS_FILE`, sourced from the secret manager rather than a checked-in file:
 
 ```text
 {"production-2026-01":"<base64-old-key>"}

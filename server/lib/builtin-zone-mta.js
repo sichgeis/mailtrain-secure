@@ -12,7 +12,7 @@ const os = require('os');
 let zoneMtaProcess = null;
 
 const zoneMtaDir = path.join(__dirname, '..', '..', 'zone-mta');
-const zoneMtaBuiltingConfig = path.join(zoneMtaDir, 'config', 'builtin-zonemta.json');
+const zoneMtaBuiltingConfig = process.env.BUILTIN_ZONE_MTA_CONFIG || path.join(zoneMtaDir, 'config', 'builtin-zonemta.json');
 
 const password = process.env.BUILTIN_ZONE_MTA_PASSWORD || crypto.randomBytes(20).toString('hex').toLowerCase();
 

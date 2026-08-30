@@ -246,6 +246,10 @@ reports:
   unsafeJavaScriptExecution: false
 
 security:
+  database:
+    # Existing installations retain startup migration behavior. Hardened
+    # deployments run migrations in a separate one-shot container.
+    runMigrationsAtStartup: true
   secrets:
     # Supply these through MAILTRAIN_MASTER_KEY (32 random bytes, base64) and
     # MAILTRAIN_MASTER_KEY_ID. Never commit or persist the key in this file.

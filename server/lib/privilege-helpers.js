@@ -51,6 +51,13 @@ function getConfigROUidGid() {
 function ensureMailtrainOwner(file, callback) {
     const ids = getConfigUidGid();
 
+    if (process.getuid() !== 0) {
+        if (callback) {
+            return callback();
+        }
+        return Promise.resolve();
+    }
+
     if (callback) {
         fs.chown(file, ids.uid, ids.gid, callback);
     } else {

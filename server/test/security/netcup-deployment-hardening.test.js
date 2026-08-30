@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const yaml = require('js-yaml');
+const {assertRuntimeSchemaCurrent} = require('../../lib/runtime-schema');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const deploymentRoot = path.join(repositoryRoot, 'deploy/netcup');
@@ -15,7 +16,7 @@ function read(relativePath) {
 
 test('Netcup Compose exposes only Traefik and isolates every datastore', () => {
     const compose = yaml.safeLoad(read('compose.yml'));
-    assert.deepEqual(Object.keys(compose.services).sort(), ['mailtrain', 'mariadb', 'migrate', 'mongo', 'redis', 'traefik']);
+    assert.deepEqual(Object.keys(compose.services).sort(), ['files-init', 'mailtrain', 'mariadb', 'migrate', 'mongo', 'redis', 'traefik']);
     assert.deepEqual(compose.services.traefik.ports, ['80:80', '443:443']);
     for (const [name, service] of Object.entries(compose.services)) {
         if (name !== 'traefik') {
@@ -26,22 +27,30 @@ test('Netcup Compose exposes only Traefik and isolates every datastore', () => {
     assert.equal(compose.services.mariadb.networks.includes('backend'), true);
     assert.equal(compose.services.redis.networks.includes('backend'), true);
     assert.equal(compose.services.mongo.networks.includes('backend'), true);
+    assert.deepEqual(compose.services.traefik.networks, ['edge', 'proxy']);
+    assert.deepEqual(compose.services.mariadb.networks, ['backend']);
+    assert.deepEqual(compose.services.redis.networks, ['backend']);
+    assert.deepEqual(compose.services.mongo.networks, ['backend']);
+    assert.deepEqual(compose.services.migrate.profiles, ['migration']);
+    assert.deepEqual(compose.services.mailtrain.profiles, ['runtime']);
+    assert.equal(compose.services.mailtrain.depends_on.migrate, undefined);
+    assert.doesNotMatch(read('compose.yml'), /docker\.sock|privileged:|network_mode:\s*host|pid:\s*host|ipc:\s*host/);
 });
 
 test('trusted, sandbox, and public HTTPS origins have distinct Traefik routers', () => {
-    const composeSource = read('compose.yml');
-    for (const origin of ['MAILTRAIN_TRUSTED_HOST', 'MAILTRAIN_SANDBOX_HOST', 'MAILTRAIN_PUBLIC_HOST']) {
-        assert.match(composeSource, new RegExp(`Host\\(.*\\$\\{${origin}`));
-    }
-    assert.match(composeSource, /trusted[^\n]*loadbalancer\.server\.port=3000/);
-    assert.match(composeSource, /sandbox[^\n]*loadbalancer\.server\.port=3003/);
-    assert.match(composeSource, /public[^\n]*loadbalancer\.server\.port=3004/);
+    const routes = read('traefik-dynamic.yml');
+    assert.match(routes, /Host\(`__TRUSTED_HOST__`\)/);
+    assert.match(routes, /Host\(`__SANDBOX_HOST__`\)/);
+    assert.match(routes, /Host\(`__PUBLIC_HOST__`\)/);
+    assert.match(routes, /mailtrain-trusted:[\s\S]*?http:\/\/mailtrain:3000/);
+    assert.match(routes, /mailtrain-sandbox:[\s\S]*?http:\/\/mailtrain:3003/);
+    assert.match(routes, /mailtrain-public:[\s\S]*?http:\/\/mailtrain:3004/);
     assert.doesNotMatch(read('.env.example'), /example\.(com|org)|CHANGE_ME|password/i);
 });
 
 test('containers are least-privilege, bounded, health-checked, and digest-pinned', () => {
     const compose = yaml.safeLoad(read('compose.yml'));
-    for (const name of ['traefik', 'mailtrain', 'mariadb', 'redis', 'mongo']) {
+    for (const name of ['traefik', 'mailtrain', 'migrate', 'mariadb', 'redis', 'mongo']) {
         const service = compose.services[name];
         assert.equal(service.read_only, true, `${name} root filesystem must be read-only`);
         assert.deepEqual(service.cap_drop, ['ALL']);
@@ -49,18 +58,49 @@ test('containers are least-privilege, bounded, health-checked, and digest-pinned
         assert.ok(service.pids_limit > 0);
         assert.ok(service.mem_limit);
         assert.ok(service.cpus);
-        assert.ok(service.healthcheck);
+        if (name !== 'migrate') {
+            assert.ok(service.healthcheck);
+        }
         assert.match(service.image, /^\$\{[A-Z_]+_IMAGE:\?/);
     }
     assert.match(read('validate-env.sh'), /@sha256:\[0-9a-f\]\{64\}/);
+
+    const filesInit = compose.services['files-init'];
+    assert.deepEqual(filesInit.profiles, ['maintenance']);
+    assert.equal(filesInit.user, '0:0');
+    assert.equal(filesInit.read_only, true);
+    assert.deepEqual(filesInit.cap_drop, ['ALL']);
+    assert.deepEqual(filesInit.cap_add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
+    assert.deepEqual(filesInit.security_opt, ['no-new-privileges:true']);
+    assert.deepEqual(filesInit.volumes, ['mailtrain-files:/app/server/files']);
+    assert.equal(filesInit.network_mode, 'none');
+    assert.ok(filesInit.pids_limit > 0 && filesInit.mem_limit && filesInit.cpus);
+});
+
+test('application health check authenticates to every runtime dependency', () => {
+    const healthcheck = read('healthcheck.js');
+    assert.match(healthcheck, /mysql2\/promise/);
+    assert.match(healthcheck, /\['AUTH', configuration\.redis\.password\]/);
+    assert.match(healthcheck, /MongoClient\.connect/);
+    assert.match(healthcheck, /command\(\{ping: 1\}\)/);
+    assert.match(healthcheck, /port: 3000/);
+    assert.doesNotMatch(healthcheck, /console\.(?:log|error)|error\.message|error\.stack/);
+});
+
+test('runtime refuses pending migrations when startup DDL is disabled', async () => {
+    await assert.rejects(
+        () => assertRuntimeSchemaCurrent({list: async () => [[], [{file: 'pending.js'}]]}),
+        error => error.code === 'EDBMIGRATIONREQUIRED'
+    );
+    await assertRuntimeSchemaCurrent({list: async () => [[], []]});
 });
 
 test('datastore credentials, TLS, and database duties are separated', () => {
     const composeSource = read('compose.yml');
     const bootstrap = read('mariadb-init.sh');
-    const entrypoint = read('mailtrain-entrypoint.sh');
-    assert.match(composeSource, /redis_password/);
-    assert.match(composeSource, /mongo_password/);
+    const entrypoint = `${read('mailtrain-entrypoint.sh')}\n${read('render-config.js')}`;
+    assert.match(composeSource, /redis_secret/);
+    assert.match(composeSource, /mongo_secret/);
     assert.match(composeSource, /db_ca/);
     assert.match(entrypoint, /ssl:/);
     assert.match(entrypoint, /rejectUnauthorized: true/);
@@ -85,7 +125,13 @@ test('production images install at build time and run Mailtrain as non-root', ()
 
 test('operator runbook requires backup restore and firewall validation before cutover', () => {
     const runbook = read('README.md');
+    const gitignore = fs.readFileSync(path.join(repositoryRoot, '.gitignore'), 'utf8');
     for (const requirement of ['backup', 'restore', 'firewall', 'rollback', 'three distinct', 'no production migration']) {
         assert.match(runbook.toLowerCase(), new RegExp(requirement));
     }
+    assert.match(gitignore, /deploy\/netcup\/\.env/);
+    assert.match(gitignore, /deploy\/netcup\/secrets\//);
+    assert.match(runbook, /--profile migration run --rm migrate/);
+    assert.match(runbook, /--profile maintenance run --rm files-init/);
+    assert.match(runbook, /credential rotation/i);
 });

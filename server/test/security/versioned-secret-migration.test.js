@@ -2,7 +2,9 @@
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const childProcess = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -150,4 +152,25 @@ test('token rotation is row-locked and only required sender processes inherit se
     assert.match(senders, /\.\.\.secretProcessEnvironment\(\)/);
     assert.match(senderMaster, /\.\.\.secretProcessEnvironment\(\)/);
     assert.doesNotMatch(genericFork, /MAILTRAIN_MASTER_KEY/);
+});
+
+test('container key files load without placing raw key bytes in process environment', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-key-file-'));
+    const keyFile = path.join(directory, 'master-key');
+    fs.writeFileSync(keyFile, KEY_A.toString('base64'), {mode: 0o600});
+    const script = 'const storage=require(\'./lib/secret-storage\').getStorage({required:true});process.stdout.write(storage.keyId)';
+    const result = childProcess.spawnSync(process.execPath, ['-e', script], {
+        cwd: path.join(repositoryRoot, 'server'),
+        env: {
+            ...process.env,
+            NODE_ENV: 'test',
+            MAILTRAIN_MASTER_KEY: '',
+            MAILTRAIN_MASTER_KEY_FILE: keyFile,
+            MAILTRAIN_MASTER_KEY_ID: 'mounted-key'
+        },
+        encoding: 'utf8'
+    });
+    fs.rmSync(directory, {recursive: true, force: true});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'mounted-key');
 });
