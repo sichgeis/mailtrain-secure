@@ -4,6 +4,19 @@ function firstValue(value) {
     return Array.isArray(value) ? value[0] : value;
 }
 
+function getAttribute(attributes, configuredName) {
+    if (!configuredName) {
+        return undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(attributes, configuredName)) {
+        return attributes[configuredName];
+    }
+
+    const normalizedName = configuredName.toLowerCase();
+    const matchingName = Object.keys(attributes).find(name => name.toLowerCase() === normalizedName);
+    return matchingName ? attributes[matchingName] : undefined;
+}
+
 function normalizeCasProfile(casProfile, {nameTag, mailTag}) {
     const attributes = casProfile && casProfile.attributes ? casProfile.attributes : {};
     const username = casProfile && casProfile.user;
@@ -16,8 +29,8 @@ function normalizeCasProfile(casProfile, {nameTag, mailTag}) {
 
     return {
         username,
-        displayName: firstValue(attributes[nameTag]) || username,
-        email: firstValue(attributes[mailTag])
+        displayName: firstValue(getAttribute(attributes, nameTag)) || username,
+        email: firstValue(getAttribute(attributes, mailTag))
     };
 }
 
