@@ -9,6 +9,7 @@ const stream = require('stream');
 const privilegeHelpers = require('./privilege-helpers');
 const synchronized = require('./synchronized');
 const {removeOrphanedCacheFiles} = require('./file-cache-reconciliation');
+const {formatCacheWriteFailure} = require('./file-cache-write-logging');
 const { tmpName } = require('tmp-promise');
 
 const pruneBatchSize = 1000;
@@ -120,6 +121,10 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
             // This means that the file is not present or it is just being created. We thus generate it and cache it.
             let fileStream = null;
             let tmpFilePath = null;
+            let cacheFilePath = null;
+            let cacheWriteSettled = false;
+            let cacheWriteCompleted = false;
+            let cacheCreated = false;
 
             const ensureFileStream = callback => {
                 if (!fileStream) {
@@ -153,18 +158,38 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
                         fileStream.end(null, null, async () => {
                             try {
                                 await knex.transaction(async tx => {
-                                    const existingFileEntry = await knex('file_cache').where('type', typeId).where('key', key).first();
+                                    const existingFileEntry = await tx('file_cache').where('type', typeId).where('key', key).first();
 
                                     if (!existingFileEntry) {
                                         const ids = await tx('file_cache').insert({type: typeId, key, mimetype: res.getHeader('Content-Type'), size: fileSize});
-                                        await fs.moveAsync(tmpFilePath, getLocalFileName(ids[0]), {});
-                                        mayNeedPruning = true;
+                                        cacheFilePath = getLocalFileName(ids[0]);
+                                        await fs.moveAsync(tmpFilePath, cacheFilePath, {});
+                                        cacheCreated = true;
                                     } else {
                                         await fs.unlinkAsync(tmpFilePath);
                                     }
                                 });
+                                if (cacheCreated) {
+                                    // Do not expose the new file to reconciliation
+                                    // until its database transaction has committed.
+                                    mayNeedPruning = true;
+                                }
+                                cacheWriteCompleted = true;
                             } catch (err) {
-                                await fs.unlinkAsync(tmpFilePath);
+                                cacheWriteSettled = true;
+                                log.error('FileCache', formatCacheWriteFailure(typeId, err));
+
+                                for (const filePath of [tmpFilePath, cacheFilePath]) {
+                                    if (filePath) {
+                                        try {
+                                            await fs.unlinkAsync(filePath);
+                                        } catch (cleanupErr) {
+                                            if (cleanupErr.code !== 'ENOENT') {
+                                                log.error('FileCache', formatCacheWriteFailure(typeId, cleanupErr));
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             callback();
@@ -173,15 +198,21 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
                 },
 
                 destroy(err, callback) {
+                    // Writable streams auto-destroy after a successful final(). At
+                    // that point the cache row and file are durable and must not be
+                    // treated as an aborted write.
+                    if (cacheWriteCompleted || cacheWriteSettled) {
+                        callback(err);
+                        return;
+                    }
+
                     res.destroy(err);
 
                     if (fileStream) {
                         fileStream.destroy(err);
-                        fs.unlink(tmpFilePath, () => {
-                            knex('file_cache').where('type', typeId).where('key', key).del().then(()=> callback());
-                        });
+                        fs.unlink(tmpFilePath, () => callback(err));
                     } else {
-                        callback();
+                        callback(err);
                     }
                 }
             });
