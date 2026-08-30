@@ -34,6 +34,7 @@ test('sandbox and public origins receive role-specific framing policy', async ({
     expect(sandboxResponse.status()).toBe(200);
     expect(sandboxResponse.headers()['content-security-policy']).toContain('sandbox');
     expect(sandboxResponse.headers()['content-security-policy']).toContain(`frame-ancestors ${trustedOrigin}`);
+    expect(sandboxResponse.headers()['content-security-policy']).not.toContain("'unsafe-eval'");
 
     const publicResponse = await request.get(`${publicOrigin}/subscription/Hkj1vCoJb`);
     expect(publicResponse.status()).toBe(200);
@@ -137,7 +138,17 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     expect(createdTemplate.status).toBe(200);
     expect(createdTemplate.id).toBeGreaterThan(0);
 
+    const editorResponsePromise = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.origin === sandboxOrigin && url.pathname === '/anonymous/mosaico/editor';
+    });
     await page.goto(`${trustedOrigin}/templates/${createdTemplate.id}/edit`);
+
+    const editorResponse = await editorResponsePromise;
+    const editorCsp = editorResponse.headers()['content-security-policy'];
+    expect(editorCsp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(editorCsp).toContain('sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts');
+    expect(editorCsp).toContain(`frame-ancestors ${trustedOrigin}`);
 
     const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
     await expect.poll(async () => {
