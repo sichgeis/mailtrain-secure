@@ -57,7 +57,7 @@
     "compression": "1.8.1",
     "config": "5.0.1",
     "connect-flash": "^0.1.1",
-    "connect-redis": "^3.4.2",
+    "connect-redis": "^10.0.0",
     "cookie-parser": "1.4.7",
     "cors": "2.8.6",
     "csurf": "1.11.0",
