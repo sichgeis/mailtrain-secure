@@ -13,8 +13,10 @@ const contextHelpers = require('../lib/context-helpers');
 const mailers = require('../lib/mailers');
 const senders = require('../lib/senders');
 const dependencyHelpers = require('../lib/dependency-helpers');
+const {protectMailerSettings, revealMailerSettings} = require('../lib/secret-storage');
 
 const allowedKeys = new Set(['name', 'description', 'from_email', 'from_email_overridable', 'from_name', 'from_name_overridable', 'reply_to', 'reply_to_overridable', 'x_mailer', 'verp_hostname', 'verp_disable_sender_header', 'mailer_type', 'mailer_settings', 'namespace']);
+const storageKeys = new Set([...allowedKeys, 'mailer_secrets']);
 
 const allowedMailerTypes = new Set(Object.values(MailerType));
 
@@ -72,7 +74,12 @@ async function _getByTx(tx, context, key, id, withPermissions, withPrivateData) 
 
         await shares.enforceEntityPermissionTx(tx, context, 'sendConfiguration', entity.id, 'viewPrivate');
 
-        entity.mailer_settings = JSON.parse(entity.mailer_settings);
+        entity.mailer_settings = revealMailerSettings(
+            JSON.parse(entity.mailer_settings),
+            entity.mailer_secrets,
+            entity.cid
+        );
+        delete entity.mailer_secrets;
     } else {
         entity = await tx('send_configurations').where(key, id).select(
             ['id', 'name', 'cid', 'description', 'from_email', 'from_email_overridable', 'from_name', 'from_name_overridable', 'reply_to', 'reply_to_overridable']
@@ -110,11 +117,13 @@ async function getByCid(context, cid, withPermissions = true, withPrivateData = 
     });
 }
 
-async function _validateAndPreprocess(tx, entity, isCreate) {
+async function _validateAndPreprocess(tx, entity, identity) {
     await namespaceHelpers.validateEntity(tx, entity);
 
     enforce(allowedMailerTypes.has(entity.mailer_type), 'Unknown mailer type');
-    entity.mailer_settings = JSON.stringify(entity.mailer_settings);
+    const protectedSettings = protectMailerSettings(entity.mailer_settings, identity);
+    entity.mailer_settings = JSON.stringify(protectedSettings.mailerSettings);
+    entity.mailer_secrets = protectedSettings.mailerSecrets;
 }
 
 
@@ -123,10 +132,11 @@ async function create(context, entity) {
     return await knex.transaction(async tx => {
         await shares.enforceEntityPermissionTx(tx, context, 'namespace', entity.namespace, 'createSendConfiguration');
 
-        await _validateAndPreprocess(tx, entity);
+        entity.cid = shortid.generate();
+        await _validateAndPreprocess(tx, entity, entity.cid);
 
-        const filteredEntity = filterObject(entity, allowedKeys);
-        filteredEntity.cid = shortid.generate();
+        const filteredEntity = filterObject(entity, storageKeys);
+        filteredEntity.cid = entity.cid;
 
         const ids = await tx('send_configurations').insert(filteredEntity);
         const id = ids[0];
@@ -146,18 +156,23 @@ async function updateWithConsistencyCheck(context, entity) {
             throw new interoperableErrors.NotFoundError();
         }
 
-        existing.mailer_settings = JSON.parse(existing.mailer_settings);
+        existing.mailer_settings = revealMailerSettings(
+            JSON.parse(existing.mailer_settings),
+            existing.mailer_secrets,
+            existing.cid
+        );
+        delete existing.mailer_secrets;
 
         const existingHash = hash(existing);
         if (existingHash !== entity.originalHash) {
             throw new interoperableErrors.ChangedError();
         }
 
-        await _validateAndPreprocess(tx, entity);
+        await _validateAndPreprocess(tx, entity, existing.cid);
 
         await namespaceHelpers.validateMoveTx(tx, context, entity, existing, 'sendConfiguration', 'createSendConfiguration', 'delete');
 
-        await tx('send_configurations').where('id', entity.id).update(filterObject(entity, allowedKeys));
+        await tx('send_configurations').where('id', entity.id).update(filterObject(entity, storageKeys));
 
         await shares.rebuildPermissionsTx(tx, { entityTypeId: 'sendConfiguration', entityId: entity.id });
     });

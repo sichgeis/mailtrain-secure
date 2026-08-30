@@ -5,18 +5,39 @@
     "description": "Mailtrain builtin ZoneMTA instance",
     "main": "index.js",
     "scripts": {
-        "start": "node index.js --config=config/zonemta.js"
+        "start": "node index.js --config=config/zonemta.js",
+        "test": "node --test test/*.test.js"
     },
     "keywords": [],
     "license": "GPL-3.0",
     "homepage": "https://mailtrain.org/",
+    "packageManager": "npm@11.19.0",
     "engines": {
-        "node": ">=10.0.0"
+        "node": ">=24.0.0 <25"
     },
     "dependencies": {
-        "zone-mta": "^2.3.0",
-        "zonemta-delivery-counters": "^1.0.1",
-        "zonemta-limiter": "^1.0.0",
-        "zonemta-loop-breaker": "^1.0.2"
+        "@zone-eu/zone-mta": "3.10.18",
+        "libmime": "5.4.1",
+        "nodemailer": "9.0.6",
+        "zonemta-delivery-counters": "1.0.1",
+        "zonemta-limiter": "1.0.0",
+        "zonemta-loop-breaker": "1.0.2"
+    },
+    "overrides": {
+        "async": "3.2.6",
+        "nodemailer": "9.0.6",
+        "@zone-eu/zone-mta": {
+            "js-yaml": "5.4.1",
+            "mailauth": "5.0.2",
+            "request": "npm:@cypress/request@4.0.1",
+            "restify": "12.0.0",
+            "smtp-server": "3.19.4"
+        },
+        "mx-connect": {
+            "mailauth": "5.0.2"
+        },
+        "zonemta-delivery-counters": {
+            "redis": "3.1.2"
+        }
     }
 }

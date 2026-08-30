@@ -10,6 +10,7 @@ const contextHelpers = require('../../lib/context-helpers');
 const router = require('../../lib/router-async').create();
 const {castToInteger} = require('../../lib/helpers');
 const fs = require('fs-extra');
+const {sanitizeUntrustedHtml} = require('../../lib/html-sanitizer');
 
 router.getAsync('/reports/:reportId', passport.loggedIn, async (req, res) => {
     const report = await reports.getByIdWithTemplate(req.context, castToInteger(req.params.reportId));
@@ -71,7 +72,8 @@ router.getAsync('/report-content/:id', async (req, res) => {
     const file = reportHelpers.getReportContentFile(report);
 
     if (await fs.pathExists(file)) {
-        res.sendFile(file);
+        const content = await fs.readFile(file, 'utf8');
+        res.type('text/plain').send(sanitizeUntrustedHtml(content));
     } else {
         res.send('');
     }

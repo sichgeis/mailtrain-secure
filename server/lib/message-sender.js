@@ -16,8 +16,8 @@ const {CampaignSource, CampaignType} = require('../../shared/campaigns');
 const {toNameTagLangauge} = require('../../shared/lists');
 const {CampaignMessageStatus, CampaignMessageErrorType} = require('../../shared/campaigns');
 const tools = require('./tools');
-const htmlToText = require('html-to-text');
-const request = require('request-promise');
+const {convert: htmlToText} = require('html-to-text');
+const {fetch: outboundFetch} = require('./outbound-fetch');
 const files = require('../models/files');
 const {getPublicUrl} = require('./urls');
 const blacklist = require('../models/blacklist');
@@ -212,18 +212,21 @@ class MessageSender {
 
             let response;
             try {
-                response = await request.post({
-                    uri: sourceUrl,
+                response = await outboundFetch(sourceUrl, {
+                    method: 'POST',
                     form,
-                    resolveWithFullResponse: true
+                    sensitiveData: true,
+                    headers: {
+                        accept: 'text/html,application/xhtml+xml'
+                    }
                 });
             } catch (exc) {
-                log.error('MessageSender', `Error pulling content from URL (${sourceUrl})`);
+                log.error('MessageSender', 'Error pulling campaign content from its configured URL');
                 response = {statusCode: exc.message};
             }
 
             if (response.statusCode !== 200) {
-                const statusError = new Error(`Received status code ${response.statusCode} from ${sourceUrl}`);
+                const statusError = new Error(`Received status code ${response.statusCode} from the configured campaign URL`);
                 if (response.statusCode >= 500) {
                     statusError.campaignMessageErrorType = CampaignMessageErrorType.PERMANENT;
                 } else {
@@ -262,7 +265,7 @@ class MessageSender {
 
         const generateText = !(text || '').trim();
         if (generateText) {
-            text = htmlToText.fromString(html, {wordwrap: 130});
+            text = htmlToText(html, {wordwrap: 130});
         } else {
             // When no list and subscriptionGrouped is provided, formatCampaignTemplate works the same way as formatTemplate
             text = tools.formatCampaignTemplate(text, this.tagLanguage, mergeTags, false, campaign, this.listsById, list, subscriptionGrouped)
@@ -468,7 +471,7 @@ class MessageSender {
             throw err;
         }
 
-        log.verbose('MessageSender', `response: ${info.response}   messageId: ${info.messageId}`);
+        log.verbose('MessageSender', 'Provider accepted the message');
 
         let match;
         if ((match = info.response.match(/^250 Message queued as ([0-9a-f]+)$/))) {
@@ -663,7 +666,7 @@ async function sendQueuedMessage(queuedMessage) {
                         await files.unlockTx(tx, 'campaign', 'attachment', attachment.id);
                     });
                 } catch (err) {
-                    log.error('MessageSender', `Error when unlocking attachment ${attachment.id} for ${result.email} (queuedId: ${queuedMessage.id})`);
+                    log.error('MessageSender', `Error when unlocking attachment ${attachment.id} for queued message ${queuedMessage.id}`);
                     log.verbose(err.stack);
                 }
             }
@@ -736,7 +739,7 @@ async function queueSubscriptionMessage(sendConfigurationId, to, subject, encryp
     if (textRenderer) {
         text = textRenderer(template.data || {});
     } else if (html) {
-        text = htmlToText.fromString(html, {
+        text = htmlToText(html, {
             wordwrap: 130
         });
     }

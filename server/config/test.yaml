@@ -1,0 +1,35 @@
+# Synthetic-data-only defaults. CI overrides credentials through NODE_CONFIG.
+mysql:
+  host: 127.0.0.1
+  user: mailtrain_test
+  password: mailtrain_test
+  database: mailtrain_ci_test
+  port: 3306
+
+redis:
+  enabled: true
+  host: 127.0.0.1
+  port: 6379
+  db: 15
+
+builtinZoneMTA:
+  enabled: false
+
+reports:
+  enabled: false
+
+www:
+  host: 127.0.0.1
+  trustedPort: 3000
+  sandboxPort: 3003
+  publicPort: 3004
+  trustedUrlBase: http://127.0.0.1:3000
+  sandboxUrlBase: http://127.0.0.1:3003
+  publicUrlBase: http://127.0.0.1:3004
+  secret: synthetic-ci-session-secret-not-for-production
+
+security:
+  secrets:
+    allowPlaintextCompatibility: true
+  sessions:
+    secure: false

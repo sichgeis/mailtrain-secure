@@ -18,7 +18,7 @@ router.getAsync('/:campaign/:list/:subscription/:link', async (req, res) => {
         await links.countLink(req.ip, req.headers['user-agent'], req.params.campaign, req.params.list, req.params.subscription, link.id);
 
     } else {
-        log.error('Redirect', 'Unresolved URL: <%s>', req.url);
+        log.error('Redirect', 'Unresolved tracked link request');
         throw new interoperableErrors.NotFoundError('Oops, we couldn\'t find a link for the URL you clicked');
     }
 });

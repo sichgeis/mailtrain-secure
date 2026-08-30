@@ -9,7 +9,7 @@ const { MailerType, ZoneMTAType, getSystemSendConfigurationId, getSystemSendConf
 const { enforce, hashEmail} = require('../../../lib/helpers');
 const { EntityVals: TriggerEntityVals, EventVals: TriggerEventVals } = require('../../../../shared/triggers');
 const { SubscriptionSource } = require('../../../../shared/lists');
-const {DOMParser, XMLSerializer} = require('xmldom');
+const {DOMParser, XMLSerializer} = require('@xmldom/xmldom');
 const log = require('../../../lib/log');
 const shortid = require('../../../lib/shortid');
 const slugify = require('slugify');

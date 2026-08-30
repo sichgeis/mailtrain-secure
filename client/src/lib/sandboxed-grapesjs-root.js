@@ -17,7 +17,6 @@ import grapesjs from 'grapesjs';
 import 'grapesjs-mjml';
 
 import 'grapesjs-preset-newsletter';
-import 'grapesjs-preset-newsletter/dist/grapesjs-preset-newsletter.css';
 
 import "./sandboxed-grapesjs.scss";
 
@@ -632,5 +631,4 @@ export default function() {
         document.getElementById('root')
     );
 };
-
 

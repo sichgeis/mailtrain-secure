@@ -43,6 +43,8 @@ async function startHTTPServer(appType, appName, port) {
     app.set('port', port);
 
     const server = http.createServer(app);
+    server.requestTimeout = config.security.requestTimeoutMs;
+    server.headersTimeout = config.security.headersTimeoutMs;
 
     server.on('error', err => {
         if (err.syscall !== 'listen') {
@@ -79,9 +81,13 @@ async function startHTTPServer(appType, appName, port) {
 // Start the whole circus
 // ---------------------------------------------------------------------------------------
 async function init() {
-    await dbcheck();
-
-    await knex.migrate.latest(); // And now the current migration with Knex
+    if (config.security.database.runMigrationsAtStartup) {
+        await dbcheck();
+        await knex.migrate.latest();
+    } else {
+        const {assertRuntimeSchemaCurrent} = require('./lib/runtime-schema');
+        await assertRuntimeSchemaCurrent(knex.migrate);
+    }
 
     await shares.regenerateRoleNamesTable();
     await shares.rebuildPermissions();
@@ -126,5 +132,3 @@ async function init() {
 }
 
 init().catch(err => {log.error('', err); process.exit(1); });
-
-

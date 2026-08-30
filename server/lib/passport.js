@@ -14,6 +14,7 @@ const users = require('../models/users');
 const { nodeifyFunction, nodeifyPromise } = require('./nodeify');
 const interoperableErrors = require('../../shared/interoperable-errors');
 const contextHelpers = require('./context-helpers');
+const {extractAccessToken} = require('./auth-security');
 
 let authMode = 'local';
 
@@ -70,7 +71,13 @@ if (config.ldap.enabled) {
 }
 
 module.exports.csrfProtection = csrf({
-    cookie: true
+    cookie: {
+        key: config.security.sessions.secure ? '__Host-mailtrain.csrf' : '_csrf',
+        secure: config.security.sessions.secure,
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/'
+    }
 });
 
 module.exports.parseForm = bodyParser.urlencoded({
@@ -87,7 +94,15 @@ module.exports.loggedIn = (req, res, next) => {
 };
 
 module.exports.authByAccessToken = (req, res, next) => {
-    const accessToken = req.get('access-token') || req.query.access_token
+    let accessToken;
+    try {
+        accessToken = extractAccessToken(req, {
+            legacyQueryTokensEnabled: config.security.legacyQueryTokens.enabled,
+            warn: message => log.warn('Security', message)
+        });
+    } catch (err) {
+        return res.status(err.status || 403).json({error: err.message, data: []});
+    }
 
     if (!accessToken) {
         res.status(403);
@@ -143,9 +158,32 @@ module.exports.setupRegularAuth = app => {
     app.use(passport.session());
 };
 
-module.exports.restLogout = (req, res) => {
-    req.logout();
-    res.json();
+function clearSessionCookies(res) {
+    const options = {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: config.security.sessions.secure,
+        path: '/'
+    };
+    res.clearCookie(config.security.sessions.name, options);
+    if (config.security.sessions.name !== 'mailtrain.sid') {
+        res.clearCookie('mailtrain.sid', options);
+    }
+}
+
+module.exports.restLogout = (req, res, next) => {
+    req.logout(err => {
+        if (err) {
+            return next(err);
+        }
+        req.session.destroy(err => {
+            if (err) {
+                return next(err);
+            }
+            clearSessionCookies(res);
+            res.json();
+        });
+    });
 };
 
 module.exports.restLogin = (req, res, next) => {
@@ -158,22 +196,38 @@ module.exports.restLogin = (req, res, next) => {
             return next(new interoperableErrors.IncorrectPasswordError());
         }
 
-        req.logIn(user, err => {
+        req.session.regenerate(err => {
             if (err) {
                 return next(err);
             }
-
-            if (req.body.remember) {
-                // Cookie expires after 30 days
-                req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-            } else {
-                // Cookie expires at end of session
-                req.session.cookie.expires = false;
-            }
-
-            return res.json();
+            req.logIn(user, err => {
+                if (err) {
+                    return next(err);
+                }
+                req.session.cookie.maxAge = req.body.remember ?
+                    config.security.sessions.rememberMaxAgeMs : config.security.sessions.maxAgeMs;
+                if (config.security.sessions.name !== 'mailtrain.sid') {
+                    res.clearCookie('mailtrain.sid', {path: '/', secure: config.security.sessions.secure});
+                }
+                return res.json();
+            });
         });
     })(req, res, next);
+};
+
+module.exports.regenerateAuthenticatedSession = (req, res, next) => {
+    const user = req.user;
+    req.session.regenerate(err => {
+        if (err) {
+            return next(err);
+        }
+        req.logIn(user, err => {
+            if (!err && config.security.sessions.name !== 'mailtrain.sid') {
+                res.clearCookie('mailtrain.sid', {path: '/', secure: config.security.sessions.secure});
+            }
+            next(err);
+        });
+    });
 };
 let CasStrategy;
 if (config.cas && config.cas.enabled === true) {
@@ -201,7 +255,7 @@ if (CasStrategy) {
       try {
         const user = await users.getByUsername(username);
 
-        log.info('CAS', 'Old User: '+JSON.stringify(profile));
+        log.info('CAS', 'Existing user authenticated through CAS');
         return {
             id: user.id,
             username: username,
@@ -218,7 +272,7 @@ if (CasStrategy) {
                 name: profile.displayName,
                 email: profile.emails[0].value
             });
-            log.info('CAS', 'New User: '+JSON.stringify(profile));
+            log.info('CAS', 'New user provisioned through CAS');
 
             return {
                 id: userId,
@@ -237,8 +291,19 @@ if (CasStrategy) {
     passport.deserializeUser((user, done) => done(null, user));
 
     module.exports.authenticateCas = passport.authenticate('cas', { failureRedirect: '/login?cas-login-error' });
-    module.exports.logoutCas = function (req, res) {
-        cas.logout(req, res, config.www.trustedUrlBase+'/?cas-logout-success');
+    module.exports.logoutCas = function (req, res, next) {
+        req.logout(err => {
+            if (err) {
+                return next(err);
+            }
+            req.session.destroy(err => {
+                if (err) {
+                    return next(err);
+                }
+                clearSessionCookies(res);
+                cas.logout(req, res, config.www.trustedUrlBase+'/?cas-logout-success');
+            });
+        });
     };
 
 } else if (LdapStrategy) {
@@ -294,4 +359,3 @@ if (CasStrategy) {
     passport.serializeUser((user, done) => done(null, user.id));
     passport.deserializeUser((id, done) => nodeifyPromise(users.getById(contextHelpers.getAdminContext(), id), done));
 }
-

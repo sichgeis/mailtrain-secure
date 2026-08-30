@@ -22,7 +22,8 @@ export default class API extends Component {
         super(props);
 
         this.state = {
-            accessToken: null
+            accessToken: null,
+            hasAccessToken: false
         };
     }
 
@@ -30,7 +31,8 @@ export default class API extends Component {
     async loadAccessToken() {
         const response = await axios.get(getUrl('rest/access-token'));
         this.setState({
-            accessToken: response.data
+            accessToken: null,
+            hasAccessToken: !!response.data.exists
         });
     }
 
@@ -42,7 +44,8 @@ export default class API extends Component {
     async resetAccessToken() {
         const response = await axios.post(getUrl('rest/access-token-reset'));
         this.setState({
-            accessToken: response.data
+            accessToken: response.data,
+            hasAccessToken: true
         });
     }
 
@@ -54,6 +57,8 @@ export default class API extends Component {
         let accessTokenMsg;
         if (this.state.accessToken) {
             accessTokenMsg = <div>{t('personalAccessToken') + ': '}<code>{accessToken}</code></div>;
+        } else if (this.state.hasAccessToken) {
+            accessTokenMsg = <div>{t('personalAccessToken') + ': '}{t('resetAccessToken')}</div>;
         } else {
             accessTokenMsg = <div>{t('accessTokenNotYetGenerated')}</div>;
         }
@@ -65,7 +70,7 @@ export default class API extends Component {
                 <div className="card mb-3">
                     <div className="card-body">
                         <div className="float-right">
-                            <Button label={this.state.accessToken ? t('resetAccessToken') : t('generateAccessToken')} icon="redo" className="btn-info" onClickAsync={::this.resetAccessToken} />
+                            <Button label={this.state.hasAccessToken ? t('resetAccessToken') : t('generateAccessToken')} icon="redo" className="btn-info" onClickAsync={::this.resetAccessToken} />
                         </div>
                         {accessTokenMsg}
                     </div>
@@ -101,7 +106,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}
                         <ul>
                         <li><strong>start</strong> – {t('startPosition')} (<em>{t('optionalDefault0')}</em>)</li>
                         <li><strong>limit</strong> – {t('limitEmailsCountInResponse')} (<em>{t('optionalDefault10000')}</em>)</li>
@@ -113,7 +118,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XGET '{getUrl(`api/subscriptions/P5wKkz-e7?access_token=${accessToken}&limit=10&start=10&search=gmail`)}' </pre>
+                <pre>curl -XGET -H "Authorization: Bearer {accessToken}" '{getUrl(`api/subscriptions/P5wKkz-e7?limit=10&start=10&search=gmail`)}' </pre>
 
             </div>
         </div>
@@ -132,7 +137,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -164,7 +169,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/subscribe/B16uVTdW?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/subscribe/B16uVTdW`)}' \<br/>
 --data 'EMAIL=test@example.com&amp;MERGE_CHECKBOX=yes&amp;REQUIRE_CONFIRMATION=yes'</pre>
 
                 <p>
@@ -189,7 +194,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -203,7 +208,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/unsubscribe/B16uVTdW?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/unsubscribe/B16uVTdW`)}' \<br/>
 --data 'EMAIL=test@example.com'</pre>
 
                 <p>
@@ -228,7 +233,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -242,7 +247,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/delete/B16uVTdW?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/delete/B16uVTdW`)}' \<br/>
 --data 'EMAIL=test@example.com'</pre>
                 <p>
                     {t('responseExample')}:
@@ -266,7 +271,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -301,7 +306,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/field/B16uVTdW?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/field/B16uVTdW`)}' \<br/>
 --data 'NAME=Comment&TYPE=text'</pre>
                 <p>
                     {t('responseExample')}:
@@ -324,7 +329,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}
                         <ul>
                         <li><strong>start</strong> – {t('startPosition')} (<em>{t('optionalDefault0')}</em>)</li>
                         <li><strong>limit</strong> – {t('limitEmailsCountInResponse')} (<em>{t('optionalDefault10000')}</em>)</li>
@@ -337,7 +342,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XGET '{getUrl(`api/blacklist/get?access_token=${accessToken}&limit=10&start=10&search=gmail`)}' </pre>
+                <pre>curl -XGET -H "Authorization: Bearer {accessToken}" '{getUrl(`api/blacklist/get?limit=10&start=10&search=gmail`)}' </pre>
 
             </div>
         </div>
@@ -356,7 +361,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -370,7 +375,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/blacklist/add?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/blacklist/add`)}' \<br/>
 --data 'EMAIL=test@example.com'</pre>
             </div>
         </div>
@@ -389,7 +394,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -403,7 +408,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/blacklist/delete?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/blacklist/delete`)}' \<br/>
 --data 'EMAIL=test@example.com'</pre>
             </div>
         </div>
@@ -422,14 +427,14 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XGET '{getUrl(`api/lists/test@example.com?access_token=${accessToken}`)}'</pre>
+                <pre>curl -XGET -H "Authorization: Bearer {accessToken}" '{getUrl(`api/lists/test@example.com`)}'</pre>
             </div>
         </div>
     </div>
@@ -447,14 +452,14 @@ export default class API extends Component {
                   {t('queryParams')}
                 </p>
                 <ul>
-                  <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                  <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
                   <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XGET '{getUrl(`api/lists-by-namespace/1?access_token=${accessToken}`)}'</pre>
+                <pre>curl -XGET -H "Authorization: Bearer {accessToken}" '{getUrl(`api/lists-by-namespace/1`)}'</pre>
             </div>
         </div>
     </div>
@@ -472,7 +477,7 @@ export default class API extends Component {
                   {t('queryParams')}
                 </p>
                 <ul>
-                  <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                  <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -511,7 +516,7 @@ export default class API extends Component {
                   <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/list?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/list`)}' \<br/>
                   -d 'NAMESPACE=1' \<br/>
                   -d 'UNSUBSCRIPTION_MODE=0' \<br/>
                   -d 'NAME=list1' \<br/>
@@ -544,14 +549,14 @@ export default class API extends Component {
                   {t('queryParams')}
                 </p>
                 <ul>
-                  <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                  <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
                   <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XDELETE '{getUrl(`api/list/WSGjaP1fY?access_token=${accessToken}`)}'</pre>
+                <pre>curl -XDELETE -H "Authorization: Bearer {accessToken}" '{getUrl(`api/list/WSGjaP1fY`)}'</pre>
                 <p>
                     {t('responseExample')}:
                 </p>
@@ -573,14 +578,14 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XGET '{getUrl(`api/rss/fetch/5OOnZKrp0?access_token=${accessToken}`)}'</pre>
+                <pre>curl -XGET -H "Authorization: Bearer {accessToken}" '{getUrl(`api/rss/fetch/5OOnZKrp0`)}'</pre>
             </div>
         </div>
     </div>
@@ -598,7 +603,7 @@ export default class API extends Component {
                     {t('queryParams')}
                 </p>
                 <ul>
-                    <li><strong>access_token</strong> – {t('yourPersonalAccessToken')}</li>
+                    <li><strong>Authorization: Bearer</strong> – {t('yourPersonalAccessToken')}</li>
                 </ul>
 
                 <p>
@@ -616,7 +621,7 @@ export default class API extends Component {
                     <strong>{t('example')}</strong>
                 </p>
 
-                <pre>curl -XPOST '{getUrl(`api/templates/1/send?access_token=${accessToken}`)}' \<br/>
+                <pre>curl -XPOST -H "Authorization: Bearer {accessToken}" '{getUrl(`api/templates/1/send`)}' \<br/>
 --data 'EMAIL=test@example.com&amp;SUBJECT=Test&amp;TAGS[FOO]=bar&amp;TAGS[TEST]=example'</pre>
             </div>
         </div>

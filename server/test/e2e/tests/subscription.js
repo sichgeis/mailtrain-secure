@@ -8,7 +8,21 @@ const shortid = require('../lib/shortid');
 const expect = require('chai').expect;
 const createPage = require('../page-objects/subscription');
 const faker = require('faker');
-const request = require('request-promise');
+
+async function requestJson(uri, json) {
+    const response = await fetch(uri, {
+        method: 'POST',
+        headers: {
+            authorization: `Bearer ${config.users.admin.accessToken}`,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify(json)
+    });
+    if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+    }
+    return response.json();
+}
 
 function getPage(listConf) {
     return createPage(listConf);
@@ -544,11 +558,7 @@ suite('Subscription use-cases', () => {
 
 async function apiSubscribe(listConf, subscription) {
     await step('Add subscription via API call.', async () => {
-        const response = await request({
-            uri: `${config.baseTrustedUrl}/api/subscribe/${listConf.cid}?access_token=${config.users.admin.accessToken}`,
-            method: 'POST',
-            json: subscription
-        });
+        const response = await requestJson(`${config.baseTrustedUrl}/api/subscribe/${listConf.cid}`, subscription);
         expect(response.error).to.be.a('undefined');
         expect(response.data.id).to.be.a('string');
         subscription.ucid = response.data.id;
@@ -629,12 +639,8 @@ suite('API Subscription use-cases', () => {
         const subscription = await apiSubscribe(config.lists.l1, generateSubscriptionData(config.lists.l1));
 
         await step('Unsubsribe via API call.', async () => {
-            const response = await request({
-                uri: `${config.baseTrustedUrl}/api/unsubscribe/${config.lists.l1.cid}?access_token=${config.users.admin.accessToken}`,
-                method: 'POST',
-                json: {
-                    EMAIL: subscription.EMAIL
-                }
+            const response = await requestJson(`${config.baseTrustedUrl}/api/unsubscribe/${config.lists.l1.cid}`, {
+                EMAIL: subscription.EMAIL
             });
 
             expect(response.error).to.be.a('undefined');

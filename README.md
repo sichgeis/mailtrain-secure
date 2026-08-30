@@ -100,7 +100,7 @@ Thus, by running this script below, you agree with the Let's Encrypt's Terms of 
 
 6. Open the trusted endpoint (like `https://mailtrain.example.com`)
 
-7. Authenticate as `admin`:`test`
+7. Authenticate as `admin` with the strong password configured during initialization. No default administrator password is provided.
 
 8. Update your password under admin/Account
 
@@ -163,13 +163,13 @@ All endpoints (trusted, sandbox, public) will provide only HTTP as follows:
 
 6. Open the trusted endpoint http://localhost:3000
 
-7. Authenticate as `admin`:`test`
+7. Authenticate as `admin` with the strong password configured during initialization. No default administrator password is provided.
 
 
 
 ### Deployment with Docker and Docker compose
 
-This setup starts a stack composed of Mailtrain, MongoDB, Redis, and MariaDB. It will setup a locally accessible Mailtrain instance with HTTP endpoints as follows.
+The root Compose file is retained for local compatibility testing and must not be exposed publicly. For a hardened Traefik deployment with private datastores and three HTTPS origins, use and review [`deploy/netcup`](deploy/netcup/README.md). The local stack uses HTTP endpoints as follows.
 - http://localhost:3000 - trusted endpoint
 - http://localhost:3003 - sandbox endpoint
 - http://localhost:3004 - public endpoint
@@ -199,7 +199,7 @@ These are the steps to start Mailtrain via docker-compose:
 
 3. Open the trusted endpoint http://localhost:3000
 
-4. Authenticate as `admin`:`test`
+4. Authenticate as `admin` with the required `ADMIN_PASSWORD` supplied before initialization.
 
 The instructions above use an automatically built Docker image on DockerHub (https://hub.docker.com/r/mailtrain/mailtrain). If you want to build the Docker image yourself (e.g. when doing development), use the `docker-compose-local.yml` located in the project's root directory.
 
@@ -238,21 +238,32 @@ Alternatively, you can just declare them there leaving their value empty
 value can be provided via a file called `.env` or via environment 
 variables (e.g. `URL_BASE_TRUSTED=https://mailtrain.domain.com (and more env-vars..) docker-compose -f docker-compose.yml build (or up)`)  
 
-#### !!!WARNING!!! Always set ADMIN_PASSWORD, as it will leave your instance otherwise vurnerable with the default password being `test`!
+#### Required Docker security settings
+
+`ADMIN_PASSWORD` has no default and must be supplied externally. Startup fails when it is missing or does not meet Mailtrain's password-strength policy. The value initializes a fresh database only; restarting the container never overwrites an administrator password that was changed in Mailtrain. Keep this value out of Compose files, source control, command-line arguments, and logs.
+
+The production Compose file exposes Mailtrain's three HTTP ports only to its private Docker networks. Connect a reverse proxy to those networks instead of publishing the backend ports on the host. The hardened Traefik topology is delivered separately.
+
+JavaScript reports are disabled by default. Enabling them requires both `WITH_REPORTS=true` and `REPORTS_UNSAFE_JAVASCRIPT=true`. This is an explicit unsafe compatibility mode: Node's `vm` module is not a security boundary, so only fully trusted report authors and database writers may use it.
+
+Provider webhook verification and request-limit migration is documented in [Webhook request boundaries](docs/security/webhook-request-boundaries.md).
 
 | Parameter        | Description |
 | ---------        | ----------- |
-| ADMIN_PASSWORD | sets Admin Password, Admin users name can be changed, but password will always be overwritten by this, please set it always, as it otherwise defaults to `test` |
-| ADMIN_ACCESS_TOKEN | sets Access Token for API, this is optional |
+| ADMIN_PASSWORD | required strong password used only to initialize the administrator on a fresh database; existing credentials are preserved |
+| ADMIN_ACCESS_TOKEN | optional access token used only during fresh-database initialization |
 | PORT_TRUSTED     | sets the trusted port of the instance (default: 3000)                 |
 | PORT_SANDBOX     | sets the sandbox port of the instance (default: 3003)                 |
 | PORT_PUBLIC      | sets the public port of the instance (default: 3004)                  |
-| URL_BASE_TRUSTED | sets the external trusted url of the instance (default: http://localhost:3000), e.g. https://mailtrain.example.com |
-| URL_BASE_SANDBOX | sets the external sandbox url of the instance (default: http://localhost:3003), e.g. https://sbox-mailtrain.example.com |
-| URL_BASE_PUBLIC  | sets the external public url of the instance (default: http://localhost:3004), e.g. https://lists.example.com |
+| URL_BASE_TRUSTED | required distinct production HTTPS origin for the trusted app, e.g. https://mailtrain.example.com |
+| URL_BASE_SANDBOX | required distinct production HTTPS origin for sandbox content, e.g. https://sbox-mailtrain.example.com |
+| URL_BASE_PUBLIC  | required distinct production HTTPS origin for public content, e.g. https://lists.example.com |
 | WWW_HOST         | sets the address that the server binds to (default: 0.0.0.0)          |
-| WWW_PROXY        | use if Mailtrain is behind an http reverse proxy (default: false)     |
-| WWW_SECRET       | sets the secret for the express session (default: `$(pwgen -1)`)      |
+| WWW_PROXY        | exact trusted proxy hop count/address policy; Compose default: `1`    |
+| WWW_SECRET       | required persistent session secret: at least 32 random bytes encoded as base64url |
+| MAILTRAIN_MASTER_KEY | required 32-byte base64 encryption key; prefer the file-mounted Netcup template in production |
+| MAILTRAIN_MASTER_KEY_ID | required non-secret identifier for the active encryption key |
+| SESSION_COOKIE_SECURE | requires HTTPS-only session cookies; production Docker default: `true` |
 | MONGO_HOST       | sets mongo host (default: mongo)                                      |
 | WITH_REDIS       | enables or disables redis (default: true)                             |
 | REDIS_HOST       | sets redis host (default: redis)                                      |
@@ -261,7 +272,7 @@ variables (e.g. `URL_BASE_TRUSTED=https://mailtrain.domain.com (and more env-var
 | MYSQL_PORT       | sets mysql port (default: 3306)                                       |
 | MYSQL_DATABASE   | sets mysql database (default: mailtrain)                              |
 | MYSQL_USER       | sets mysql user (default: mailtrain)                                  |
-| MYSQL_PASSWORD   | sets mysql password (default: mailtrain)                              |
+| MYSQL_PASSWORD   | required database password; no production default is provided         |
 | WITH_LDAP        | use if you want to enable LDAP authentication                         |
 | LDAP_HOST        | LDAP Host for authentication (default: ldap)                          |
 | LDAP_PORT        | LDAP port (default: 389)                                              |
@@ -281,6 +292,8 @@ variables (e.g. `URL_BASE_TRUSTED=https://mailtrain.domain.com (and more env-var
 | CAS_NEWUSERNAMESPACEID | The namespace id of new users (default: 1)                      |
 | LOG_LEVEL        | sets log level among `silly|verbose|info|http|warn|error|silent` (default: `info`) |
 | DEFAULT_LANGUAGE | sets default language (default: en-US) |
+| WITH_REPORTS | enables report routes and processing only when the unsafe JavaScript opt-in is also enabled (default: false) |
+| REPORTS_UNSAFE_JAVASCRIPT | acknowledges that report JavaScript is not sandboxed and explicitly opts in (default: false) |
 | WITH_POSTFIXBOUNCE | enables PostfixBounce TCP listener (default: false) |
 | POSTFIXBOUNCE_PORT | sets PostfixBounce Listening TCP-Port (default: 5699) |
 | POSTFIXBOUNCE_HOST | sets PostfixBounce Listening Host (default: 127.0.0.1) |

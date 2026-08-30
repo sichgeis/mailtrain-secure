@@ -75,7 +75,7 @@ export default class Login extends Component {
             const submitSuccessful = await this.validateAndSendFormValuesToURL(FormSendMethod.POST, 'rest/login');
 
             if (submitSuccessful) {
-                const unsafeUrl = qs.parse(this.props.location.search).next
+                const unsafeUrl = qs.parse(this.props.location.search).next || '';
                 const safeUrl = unsafeUrl.replace(/[^a-zA-Z0-9/\-]/g, "");
 
                 const nextUrl = safeUrl || getUrl();

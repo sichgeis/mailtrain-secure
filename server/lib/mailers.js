@@ -4,8 +4,8 @@ const log = require('./log');
 const config = require('./config');
 
 const nodemailer = require('nodemailer');
-const aws = require('aws-sdk');
-const openpgpEncrypt = require('nodemailer-openpgp').openpgpEncrypt;
+const { createSesBinding } = require('./aws-ses-transport');
+const { openpgpEncrypt } = require('./openpgp-encrypt');
 const sendConfigurations = require('../models/send-configurations');
 const { ZoneMTAType, MailerType } = require('../../shared/send-configurations');
 const builtinZoneMta = require('./builtin-zone-mta');
@@ -235,12 +235,7 @@ async function _createTransport(sendConfiguration) {
         const sendingRate = mailerSettings.throttling / 3600;  // convert to messages/second
 
         transportOptions = {
-            SES: new aws.SES({
-                apiVersion: '2010-12-01',
-                accessKeyId: mailerSettings.key,
-                secretAccessKey: mailerSettings.secret,
-                region: mailerSettings.region
-            }),
+            SES: createSesBinding(mailerSettings),
             debug: mailerSettings.logTransactions,
             logger: mailerSettings.logTransactions ? {
                 debug: logFunc.bind(null, 'verbose'),
@@ -260,7 +255,8 @@ async function _createTransport(sendConfiguration) {
 
     transport.use('stream', openpgpEncrypt({
         signingKey: configItems.pgpPrivateKey,
-        passphrase: configItems.pgpPassphrase
+        passphrase: configItems.pgpPassphrase,
+        maxMessageBytes: config.security.openPgp.maxMessageBytes
     }));
 
     if (existingListeners.length) {

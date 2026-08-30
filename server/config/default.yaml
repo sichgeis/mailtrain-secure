@@ -238,19 +238,108 @@ grapesjs:
       label: MJML Template
 
 reports:
-  # The whole reporting functionality can be disabled below if the they are not needed and the DB cannot be
-  # properly protected.
-  # Reports rely on custom user defined Javascript snippets defined in the report template. The snippets are run on the
-  # server when generating a report. As these snippets are stored in the DB, they pose a security risk because they can
-  # help gaining access to the server if the DB cannot
-  # be properly protected (e.g. if it is shared with another application with security weaknesses).
-  # Mailtrain mitigates this problem by running the custom Javascript snippets in a chrooted environment and under a
-  # DB user that cannot modify the database (see userRO in [mysql] above). However the chrooted environment is available
-  # only if Mailtrain is started as root. The chrooted environment still does not prevent the custom JS script in
-  # performing network operations and in generating XSS attacks as part of the report.
-  # The bottom line is that if people who are creating report templates or have write access to the DB cannot be trusted,
-  # then it's safer to switch off the reporting functionality below.
-  enabled: true
+  # Report templates contain database-stored JavaScript that executes on the server. Node vm and the legacy worker
+  # controls are not security boundaries. Leave reports disabled unless every report author and database writer is
+  # fully trusted and the deployment explicitly accepts code-execution, network, and output-content risk.
+  enabled: false
+  # This second opt-in is intentionally required because Node vm does not isolate hostile JavaScript.
+  unsafeJavaScriptExecution: false
+
+security:
+  uploads:
+    maxFileSizeBytes: 16777216
+    maxTotalBytes: 16777216
+    maxFiles: 10
+  openPgp:
+    maxMessageBytes: 33554432
+  database:
+    # Existing installations retain startup migration behavior. Hardened
+    # deployments run migrations in a separate one-shot container.
+    runMigrationsAtStartup: true
+  secrets:
+    # Supply these through MAILTRAIN_MASTER_KEY (32 random bytes, base64) and
+    # MAILTRAIN_MASTER_KEY_ID. Never commit or persist the key in this file.
+    masterKey:
+    keyId:
+    # Existing installations may opt in only while the migration is running.
+    allowPlaintextCompatibility: false
+  legacyQueryTokens:
+    enabled: false
+  sessions:
+    name: mailtrain.sid
+    secure: false
+    maxAgeMs: 43200000
+    rememberMaxAgeMs: 2592000000
+  rateLimits:
+    maxEntries: 20000
+    login:
+      limit: 30
+      windowMs: 900000
+    loginAccount:
+      limit: 10
+      windowMs: 900000
+    passwordReset:
+      limit: 20
+      windowMs: 3600000
+    passwordResetAccount:
+      limit: 5
+      windowMs: 3600000
+    restrictedAccessToken:
+      limit: 120
+      windowMs: 60000
+    subscription:
+      limit: 20
+      windowMs: 3600000
+    subscriptionMutation:
+      limit: 30
+      windowMs: 3600000
+    webhook:
+      limit: 1000
+      windowMs: 60000
+  restrictedAccessTokens:
+    ttlMs: 120000
+    maxEntries: 10000
+    maxPerUser: 20
+  # Maximum time an HTTP request may occupy a Mailtrain server connection.
+  requestTimeoutMs: 15000
+  headersTimeoutMs: 10000
+  outbound:
+    allowedPorts: [80, 443]
+    maxRedirects: 3
+    timeoutMs: 10000
+    maxResponseSize: 1048576
+    # Exact origins allowed to receive per-subscriber campaign rendering fields.
+    allowedSubscriberDataOrigins: []
+  webhooks:
+    maxClockSkewMs: 300000
+    maxDeliveryAgeMs: 2592000000
+    processingLeaseMs: 300000
+    deliveryRetentionMs: 2592000000
+    replayCacheEntries: 10000
+    aws:
+      enabled: false
+      topicArns: []
+      certificateTimeoutMs: 5000
+      confirmationTimeoutMs: 5000
+    sparkpost:
+      enabled: false
+      username:
+      password:
+    sendgrid:
+      enabled: false
+      publicKey:
+    mailgun:
+      enabled: false
+      signingKey:
+      maxFields: 8
+      maxFieldSize: 8192
+    postal:
+      enabled: false
+      publicKey:
+      keyIds: []
+    zoneMta:
+      enabled: false
+      token:
 
 testServer:
   # Starts a vanity server that redirects all mail to /dev/null
@@ -289,7 +378,7 @@ defaultRoles:
       name: Global Master
       admin: true
       description: All permissions
-      permissions: [rebuildPermissions, createJavascriptWithROAccess, displayManageUsers, manageBlacklist, manageSettings, setupAutomation]
+      permissions: [rebuildPermissions, createJavascriptWithROAccess, displayManageUsers, manageBlacklist, manageSettings, manageGlobalRoles, setupAutomation]
       rootNamespaceRole: master
     campaignsAdmin:
       name: Campaigns Admin
@@ -450,4 +539,3 @@ defaultRoles:
       name: Viewer
       description: The user can use the Mosaico template, but cannot edit it or delete it.
       permissions: [view, viewFiles]
-

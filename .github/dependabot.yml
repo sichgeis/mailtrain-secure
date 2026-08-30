@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /server
+    schedule: {interval: weekly, day: monday}
+  - package-ecosystem: npm
+    directory: /client
+    schedule: {interval: weekly, day: monday}
+  - package-ecosystem: npm
+    directory: /shared
+    schedule: {interval: weekly, day: monday}
+  - package-ecosystem: npm
+    directory: /zone-mta
+    schedule: {interval: weekly, day: monday}
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly, day: monday}
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly, day: monday}

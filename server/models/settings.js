@@ -4,8 +4,10 @@ const knex = require('../lib/knex');
 const { filterObject } = require('../lib/helpers');
 const hasher = require('node-object-hash')();
 const shares = require('./shares');
+const {protectSetting, revealSetting} = require('../lib/secret-storage');
 
 const allowedKeys = new Set(['adminEmail', 'uaCode', 'mapsApiKey', 'shoutout', 'pgpPassphrase', 'pgpPrivateKey', 'defaultHomepage']);
+const secretKeys = new Set(['pgpPassphrase', 'pgpPrivateKey']);
 // defaultHomepage is used as a default to list.homepage - if the list.homepage is not filled in
 
 function hash(entity) {
@@ -19,16 +21,17 @@ async function get(context, keyOrKeys) {
     if (!keyOrKeys) {
         keys = [...allowedKeys.values()];
     } else if (!Array.isArray(keyOrKeys)) {
-        keys = [ keys ];
+        keys = [keyOrKeys];
     } else {
         keys = keyOrKeys;
     }
 
-    const rows = await knex('settings').select(['key', 'value']).whereIn('key', keys);
+    const rows = await knex('settings').select(['key', 'value', 'encrypted_value']).whereIn('key', keys);
 
     const settings = {};
     for (const row of rows) {
-        settings[row.key] = row.value;
+        settings[row.key] = secretKeys.has(row.key) ?
+            revealSetting(row.key, row.value, row.encrypted_value) : row.value;
     }
 
     if (!Array.isArray(keyOrKeys) && keyOrKeys) {
@@ -43,11 +46,19 @@ async function set(context, data) {
 
     for (const key in data) {
         if (allowedKeys.has(key)) {
-            const value = data[key];
+            const protectedValue = secretKeys.has(key) ? protectSetting(key, data[key]) : {
+                value: data[key],
+                encryptedValue: null
+            };
+            const row = {
+                key,
+                value: protectedValue.value,
+                encrypted_value: protectedValue.encryptedValue
+            };
             try {
-                await knex('settings').insert({key, value});
+                await knex('settings').insert(row);
             } catch (err) {
-                await knex('settings').where('key', key).update('value', value);
+                await knex('settings').where('key', key).update(row);
             }
         }
     }
@@ -58,4 +69,3 @@ async function set(context, data) {
 module.exports.hash = hash;
 module.exports.get = get;
 module.exports.set = set;
-

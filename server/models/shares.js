@@ -9,6 +9,11 @@ const interoperableErrors = require('../../shared/interoperable-errors');
 const log = require('../lib/log');
 const {getGlobalNamespaceId} = require('../../shared/namespaces');
 const {getAdminId} = require('../../shared/users');
+const {
+    globalRoleRequiresElevatedAssignment,
+    isPermissionSubset,
+    isRoleGrantWithinProfile
+} = require('../lib/role-grants');
 
 // TODO: This would really benefit from some permission cache connected to rebuildPermissions
 // A bit of the problem is that the cache would have to expunged as the result of other processes modifying entites/permissions
@@ -111,6 +116,8 @@ async function assign(context, entityTypeId, entityId, userId, role) {
             enforce(!entityType.dependentPermissions.getParent(entity), 'Cannot share/unshare a dependent entity');
         }
 
+        await enforceRoleGrantTx(tx, context, entityTypeId, entityId, role);
+
         const entry = await tx(entityType.sharesTable).where({user: userId, entity: entityId}).select('role').first();
 
         if (entry) {
@@ -134,6 +141,106 @@ async function assign(context, entityTypeId, entityId, userId, role) {
             await rebuildPermissionsTx(tx, { entityTypeId, entityId, userId });
         }
     });
+}
+
+async function getNamespaceGrantProfileTx(tx, context, namespaceId) {
+    const profile = {
+        permissions: await getPermissionsTx(tx, context, 'namespace', namespaceId),
+        children: {}
+    };
+    const ancestorIds = [];
+    let currentNamespaceId = namespaceId;
+
+    while (currentNamespaceId) {
+        ancestorIds.push(currentNamespaceId);
+        const namespace = await tx('namespaces').where({id: currentNamespaceId}).select('namespace').first();
+        enforce(namespace, 'Invalid namespace id');
+        currentNamespaceId = namespace.namespace;
+    }
+
+    const namespaceShares = await tx('shares_namespace')
+        .where({user: context.user.id})
+        .whereIn('entity', ancestorIds)
+        .select('role');
+
+    for (const namespaceShare of namespaceShares) {
+        const roleSpec = config.roles.namespace[namespaceShare.role];
+        if (!roleSpec || !roleSpec.children) {
+            continue;
+        }
+
+        for (const entityTypeId of Object.keys(roleSpec.children)) {
+            if (!profile.children[entityTypeId]) {
+                profile.children[entityTypeId] = new Set();
+            }
+
+            for (const permission of roleSpec.children[entityTypeId]) {
+                profile.children[entityTypeId].add(permission);
+            }
+        }
+    }
+
+    for (const entityTypeId of Object.keys(profile.children)) {
+        profile.children[entityTypeId] = filterPermissionsByRestrictedAccessHandler(
+            context,
+            entityTypeId,
+            null,
+            [...profile.children[entityTypeId]],
+            'getNamespaceGrantProfileTx'
+        );
+    }
+
+    return profile;
+}
+
+async function enforceRoleGrantTx(tx, context, entityTypeId, entityId, role) {
+    if (!role) {
+        return;
+    }
+
+    const roleSpec = (config.roles[entityTypeId] || {})[role];
+    enforce(roleSpec, `Unknown ${entityTypeId} role`);
+
+    if (context.user.admin) {
+        return;
+    }
+
+    let grantorProfile;
+    if (entityTypeId === 'namespace') {
+        grantorProfile = await getNamespaceGrantProfileTx(tx, context, entityId);
+    } else {
+        grantorProfile = {
+            permissions: await getPermissionsTx(tx, context, entityTypeId, entityId)
+        };
+    }
+
+    if (!isRoleGrantWithinProfile(roleSpec, grantorProfile)) {
+        throwPermissionDenied();
+    }
+}
+
+async function enforceGlobalRoleAssignmentTx(tx, context, namespaceId, role) {
+    const roleSpec = config.roles.global[role];
+    enforce(roleSpec, 'Unknown global role');
+
+    if (context.user.admin || !globalRoleRequiresElevatedAssignment(roleSpec)) {
+        return;
+    }
+
+    enforceGlobalPermission(context, 'manageGlobalRoles');
+    if (!isPermissionSubset(roleSpec.permissions, getGlobalPermissions(context))) {
+        throwPermissionDenied();
+    }
+
+    if (roleSpec.rootNamespaceRole) {
+        await enforceRoleGrantTx(tx, context, 'namespace', getGlobalNamespaceId(), roleSpec.rootNamespaceRole);
+    }
+    if (roleSpec.ownNamespaceRole) {
+        await enforceRoleGrantTx(tx, context, 'namespace', namespaceId, roleSpec.ownNamespaceRole);
+    }
+    for (const sharedNamespaceId of Object.keys(roleSpec.sharedNamespaces || {})) {
+        await enforceRoleGrantTx(tx, context, 'namespace', castToInteger(sharedNamespaceId), roleSpec.sharedNamespaces[sharedNamespaceId]);
+    }
 }
 
 async function rebuildPermissionsTx(tx, restriction) {
@@ -497,14 +604,12 @@ function checkGlobalPermission(context, requiredOperations) {
         return true;
     }
 
-    const roleSpec = config.roles.global[context.user.role];
+    const availablePermissions = getGlobalPermissions(context);
     let success = false;
-    if (roleSpec) {
-        for (const requiredOperation of requiredOperations) {
-            if (roleSpec.permissions.includes(requiredOperation)) {
-                success = true;
-                break;
-            }
+    for (const requiredOperation of requiredOperations) {
+        if (availablePermissions.includes(requiredOperation)) {
+            success = true;
+            break;
         }
     }
 
@@ -633,7 +738,14 @@ function getGlobalPermissions(context) {
 
     enforce(!context.user.admin, 'getPermissions is not supposed to be called by assumed admin');
 
-    return (config.roles.global[context.user.role] || {}).permissions || [];
+    let permissions = (config.roles.global[context.user.role] || {}).permissions || [];
+
+    if (context.user.restrictedAccessHandler) {
+        const allowedPermissions = context.user.restrictedAccessHandler.globalPermissions;
+        permissions = allowedPermissions ? permissions.filter(permission => allowedPermissions.has(permission)) : [];
+    }
+
+    return permissions;
 }
 
 async function getPermissionsTx(tx, context, entityTypeId, entityId) {
@@ -708,6 +820,8 @@ module.exports.listByUserDTAjax = listByUserDTAjax;
 module.exports.listUnassignedUsersDTAjax = listUnassignedUsersDTAjax;
 module.exports.listRolesDTAjax = listRolesDTAjax;
 module.exports.assign = assign;
+module.exports.enforceGlobalRoleAssignmentTx = enforceGlobalRoleAssignmentTx;
+module.exports.enforceRoleGrantTx = enforceRoleGrantTx;
 module.exports.rebuildPermissionsTx = rebuildPermissionsTx;
 module.exports.rebuildPermissions = rebuildPermissions;
 module.exports.removeDefaultShares = removeDefaultShares;

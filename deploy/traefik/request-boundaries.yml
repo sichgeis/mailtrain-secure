@@ -1,0 +1,18 @@
+http:
+  middlewares:
+    mailtrain-request-limit:
+      buffering:
+        maxRequestBodyBytes: 2097152
+        memRequestBodyBytes: 262144
+    mailtrain-mailgun-request-limit:
+      buffering:
+        maxRequestBodyBytes: 65536
+        memRequestBodyBytes: 65536
+    mailtrain-browser-security:
+      headers:
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        customResponseHeaders:
+          Permissions-Policy: "camera=(), microphone=(), geolocation=(), payment=(), usb=()"

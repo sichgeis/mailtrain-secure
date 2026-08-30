@@ -14,8 +14,21 @@ const session = require('express-session');
 const flash = require('connect-flash');
 const hbs = require('hbs');
 const compression = require('compression');
+const crypto = require('crypto');
 const passport = require('./lib/passport');
 const contextHelpers = require('./lib/context-helpers');
+const {isReportExecutionEnabled} = require('./lib/report-execution-policy');
+const {buildSessionOptions, validateSessionSecurity} = require('./lib/session-security');
+const {
+    createHostCheckMiddleware,
+    createOriginCheckMiddleware,
+    createSecurityHeadersMiddleware,
+    validateOriginSeparation,
+    validateProxyTrust
+} = require('./lib/browser-security');
+const {redactLogMessage} = require('./lib/log-redaction');
+const {configureRateLimitStore, MemoryRateLimitStore, RedisRateLimitStore} = require('./lib/rate-limit');
+const {validateSecretStorage} = require('./lib/secret-storage');
 
 const api = require('./routes/api');
 
@@ -67,6 +80,14 @@ const { AppType } = require('../shared/app');
 
 
 let isReady = false;
+configureRateLimitStore(new MemoryRateLimitStore({maxEntries: config.security.rateLimits.maxEntries}));
+function captureRawBody(req, res, buffer) {
+    const requestPath = req.originalUrl.split('?', 1)[0].replace(/\/$/, '');
+    if (requestPath === '/webhooks/sendgrid' || requestPath === '/webhooks/postal') {
+        req.rawBody = buffer;
+    }
+}
+
 function setReady() {
     isReady = true;
 }
@@ -74,6 +95,7 @@ function setReady() {
 
 hbs.registerPartials(__dirname + '/views/partials');
 hbs.registerPartials(__dirname + '/views/subscription/partials/');
+logger.token('request-id', req => req.securityCorrelationId);
 
 /**
  * We need this helper to make sure that we consume flash messages only
@@ -123,6 +145,16 @@ hbs.registerHelper('flash_messages', function () { // eslint-disable-line prefer
 
 async function createApp(appType) {
     const app = express();
+    const production = process.env.NODE_ENV === 'production';
+    const [trustedOrigin, sandboxOrigin, publicOrigin] = validateOriginSeparation(config.www, {production});
+    validateProxyTrust(config.www.proxy, {production});
+    validateSessionSecurity({
+        secret: config.www.secret,
+        secure: config.security.sessions.secure,
+        name: config.security.sessions.name
+    }, {production});
+    validateSecretStorage({production});
+    const appOrigin = appType === AppType.TRUSTED ? trustedOrigin : appType === AppType.SANDBOXED ? sandboxOrigin : publicOrigin;
 
     function install404Fallback(url) {
         app.use(url, (req, res, next) => {
@@ -148,18 +180,42 @@ async function createApp(appType) {
         app.set('trust proxy', config.www.proxy);
     }
 
+    app.use(createHostCheckMiddleware(appOrigin));
+    app.use(createSecurityHeadersMiddleware(appType, {
+        secure: new URL(appOrigin).protocol === 'https:',
+        trustedOrigin,
+        sandboxOrigin
+    }));
+    if (appType !== AppType.PUBLIC) {
+        const originCheck = createOriginCheckMiddleware(appOrigin);
+        app.use((req, res, next) => {
+            if (appType === AppType.TRUSTED && req.path.startsWith('/webhooks/')) {
+                return next();
+            }
+            originCheck(req, res, next);
+        });
+    }
+
     // Do not expose software used
     app.disable('x-powered-by');
 
     app.use(compression());
     app.use(favicon(path.join(__dirname, '..', 'client', 'static', 'favicon.ico')));
 
-    app.use(logger(config.www.log, {
+    app.use((req, res, next) => {
+        req.securityCorrelationId = crypto.randomBytes(12).toString('hex');
+        res.setHeader('X-Request-ID', req.securityCorrelationId);
+        next();
+    });
+
+    app.use(logger(':method :url :status :response-time ms request-id=:request-id', {
         stream: {
             write: message => {
                 message = (message || '').toString();
                 if (message) {
-                    log.info('HTTP', message.replace('\n', '').trim());
+                    log.info('HTTP', redactLogMessage(message.replace('\n', '').trim(), {
+                        redactFirstPathSegment: appType === AppType.SANDBOXED
+                    }));
                 }
             }
         }
@@ -169,20 +225,22 @@ async function createApp(appType) {
 
     if (config.redis.enabled) {
         const RedisStore = require('connect-redis')(session);
-
-        app.use(session({
-            store: new RedisStore(config.redis),
+        const redisStore = new RedisStore(config.redis);
+        configureRateLimitStore(new RedisRateLimitStore(redisStore.client));
+        app.use(session(buildSessionOptions({
+            store: redisStore,
             secret: config.www.secret,
-            saveUninitialized: false,
-            resave: false
-        }));
+            secure: config.security.sessions.secure,
+            maxAgeMs: config.security.sessions.maxAgeMs,
+            name: config.security.sessions.name
+        })));
     } else {
-        app.use(session({
-            store: false,
+        app.use(session(buildSessionOptions({
             secret: config.www.secret,
-            saveUninitialized: false,
-            resave: false
-        }));
+            secure: config.security.sessions.secure,
+            maxAgeMs: config.security.sessions.maxAgeMs,
+            name: config.security.sessions.name
+        })));
     }
 
     app.use(expressLocale({
@@ -200,15 +258,18 @@ async function createApp(appType) {
 
     app.use(bodyParser.urlencoded({
         extended: true,
-        limit: config.www.postSize
+        limit: config.www.postSize,
+        verify: captureRawBody
     }));
 
     app.use(bodyParser.text({
-        limit: config.www.postSize
+        limit: config.www.postSize,
+        verify: captureRawBody
     }));
 
     app.use(bodyParser.json({
-        limit: config.www.postSize
+        limit: config.www.postSize,
+        verify: captureRawBody
     }));
 
 
@@ -285,9 +346,11 @@ async function createApp(appType) {
 
     if (appType === AppType.TRUSTED || appType === AppType.SANDBOXED) {
         useWith404Fallback('/subscriptions', subscriptions);
-        useWith404Fallback('/webhooks', webhooks);
+        if (appType === AppType.TRUSTED) {
+            useWith404Fallback('/webhooks', webhooks);
+        }
 
-        if (config.reports && config.reports.enabled === true) {
+        if (isReportExecutionEnabled(config.reports)) {
             useWith404Fallback('/rpts', reports); // This needs to be different from "reports", which is already used by the UI
         }
 
@@ -319,14 +382,15 @@ async function createApp(appType) {
         app.use('/rest', filesRest);
         app.use('/rest', settingsRest);
 
-        if (config.reports && config.reports.enabled === true) {
+        if (isReportExecutionEnabled(config.reports)) {
             app.use('/rest', reportTemplatesRest);
             app.use('/rest', reportsRest);
         }
         install404Fallback('/rest');
-        if (config.cas && config.cas.enabled === true) {
+        if (appType === AppType.TRUSTED && config.cas && config.cas.enabled === true) {
           app.get('/cas/login',
             passport.authenticateCas,
+            passport.regenerateAuthenticatedSession,
             function(req, res) {
                 res.redirect('/?cas-login-success');
           });
@@ -352,7 +416,7 @@ async function createApp(appType) {
                 resp.data = err.data;
             }
 
-            log.verbose('HTTP', err);
+            log.verbose('HTTP', redactLogMessage(err.stack || err.message || err));
             res.status(err.status || 500).json(resp);
 
         } else if (req.needsAPIJSONResponse) {
@@ -361,7 +425,7 @@ async function createApp(appType) {
                 data: []
             };
 
-            log.verbose('HTTP', err);
+            log.verbose('HTTP', redactLogMessage(err.stack || err.message || err));
             return res.status(err.status || 500).json(resp);
 
         } else {
@@ -379,7 +443,7 @@ async function createApp(appType) {
                     publicPath = getPublicUrl();
                 }
 
-                log.verbose('HTTP', err);
+                log.verbose('HTTP', redactLogMessage(err.stack || err.message || err));
                 res.status(err.status || 500);
                 res.render('error', {
                     message: err.message,

@@ -1,3 +1,5 @@
+const environment = require('process').env;
+
 module.exports = {
 
 
@@ -65,17 +67,16 @@ module.exports = {
 
     plugins: {
         "core/email-bounce": false,
-        "core/http-bounce": {
-            enabled: "main",
-            url: "http://localhost:3000/webhooks/zone-mta"
-        },
+        "core/http-bounce": false,
         "core/default-headers": {
             enabled: ["receiver", "main", "sender"],
             futureDate: false,
             xOriginatingIP: false
         },
         'mailtrain-main': {
-            enabled: ['main']
+            enabled: ['main'],
+            bounceUrl: environment.MAILTRAIN_ZONE_MTA_BOUNCE_URL,
+            bounceToken: environment.MAILTRAIN_ZONE_MTA_TOKEN
         },
         'mailtrain-receiver': {
             enabled: ['receiver'],

@@ -4,6 +4,12 @@ const log = require('./log');
 const reports = require('../models/reports');
 const executor = require('./executor');
 const contextHelpers = require('./context-helpers');
+const config = require('./config');
+const {
+    assertReportExecutionEnabled,
+    isReportExecutionEnabled,
+    warnIfUnsafeReportExecutionEnabled
+} = require('./report-execution-policy');
 
 let runningWorkersCount = 0;
 let maxWorkersCount = 1;
@@ -101,6 +107,7 @@ async function tryStartWorkers() {
 }
 
 module.exports.start = async (reportId) => {
+    assertReportExecutionEnabled(config.reports);
     if (!workers[reportId]) {
         log.info('ReportProcessor', 'Scheduling report id: %s', reportId);
         await reports.updateFields(reportId, { state: reports.ReportState.SCHEDULED, last_run: null});
@@ -123,6 +130,12 @@ module.exports.stop = async reportId => {
 };
 
 module.exports.init = async () => {
+    if (!isReportExecutionEnabled(config.reports)) {
+        log.info('ReportProcessor', 'Unsafe JavaScript report execution is disabled');
+        return;
+    }
+
+    warnIfUnsafeReportExecutionEnabled(config.reports, message => log.warn('ReportProcessor', message));
     try {
         await reports.bulkChangeState(reports.ReportState.PROCESSING, reports.ReportState.SCHEDULED);
         await tryStartWorkers();

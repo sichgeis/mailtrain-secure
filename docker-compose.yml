@@ -4,10 +4,10 @@ services:
   mysql:
     image: mariadb:10.4
     environment:
-    - MYSQL_ROOT_PASSWORD=mailtrain
+    - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?Set a strong MYSQL_ROOT_PASSWORD}
     - MYSQL_DATABASE=mailtrain
     - MYSQL_USER=mailtrain
-    - MYSQL_PASSWORD=mailtrain
+    - MYSQL_PASSWORD=${MYSQL_PASSWORD:?Set a strong MYSQL_PASSWORD}
     volumes:
     - mysql-data:/var/lib/mysql
 
@@ -23,10 +23,22 @@ services:
 
   mailtrain:
     image: mailtrain/mailtrain:latest
-    ports:
-    - "3000:3000"
-    - "3003:3003"
-    - "3004:3004"
+    environment:
+    - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in the environment}
+    - ADMIN_ACCESS_TOKEN=${ADMIN_ACCESS_TOKEN:-}
+    - WWW_SECRET=${WWW_SECRET:?Set WWW_SECRET to at least 32 random bytes encoded as base64url}
+    - SESSION_COOKIE_SECURE=true
+    - URL_BASE_TRUSTED=${URL_BASE_TRUSTED:?Set the trusted HTTPS origin}
+    - URL_BASE_SANDBOX=${URL_BASE_SANDBOX:?Set the sandbox HTTPS origin}
+    - URL_BASE_PUBLIC=${URL_BASE_PUBLIC:?Set the public HTTPS origin}
+    - WWW_PROXY=${WWW_PROXY:-1}
+    - MYSQL_PASSWORD=${MYSQL_PASSWORD:?Set a strong MYSQL_PASSWORD}
+    - MAILTRAIN_MASTER_KEY=${MAILTRAIN_MASTER_KEY:?Set the 32-byte base64 master key}
+    - MAILTRAIN_MASTER_KEY_ID=${MAILTRAIN_MASTER_KEY_ID:?Set the active master-key id}
+    expose:
+    - "3000"
+    - "3003"
+    - "3004"
     volumes:
     - mailtrain-files:/app/server/files
 
@@ -35,4 +47,3 @@ volumes:
   redis-data:
   mongo-data:
   mailtrain-files:
-

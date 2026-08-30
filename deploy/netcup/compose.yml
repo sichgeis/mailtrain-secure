@@ -1,0 +1,277 @@
+name: mailtrain-secure
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  init: true
+  ulimits:
+    nofile:
+      soft: 4096
+      hard: 8192
+
+services:
+  traefik:
+    <<: *hardening
+    image: "${TRAEFIK_IMAGE:?Set TRAEFIK_IMAGE to an immutable tag@sha256 digest}"
+    user: "${TRAEFIK_UID:-65532}:${TRAEFIK_GID:-65532}"
+    entrypoint: [/bin/sh, /etc/traefik/traefik-entrypoint.sh]
+    environment:
+      MAILTRAIN_TRUSTED_HOST: "${MAILTRAIN_TRUSTED_HOST:?Set trusted hostname}"
+      MAILTRAIN_SANDBOX_HOST: "${MAILTRAIN_SANDBOX_HOST:?Set sandbox hostname}"
+      MAILTRAIN_PUBLIC_HOST: "${MAILTRAIN_PUBLIC_HOST:?Set public hostname}"
+      ACME_EMAIL: "${ACME_EMAIL:?Set ACME account email}"
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./traefik-entrypoint.sh:/etc/traefik/traefik-entrypoint.sh:ro
+      - ./traefik-dynamic.yml:/etc/traefik/dynamic-template.yml:ro
+      - ../traefik/request-boundaries.yml:/etc/traefik/request-boundaries.yml:ro
+      - "${TRAEFIK_ACME_FILE:?Set TRAEFIK_ACME_FILE}:/letsencrypt/acme.json"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /run/traefik:rw,noexec,nosuid,nodev,size=4m,uid=${TRAEFIK_UID:-65532},gid=${TRAEFIK_GID:-65532},mode=0700
+    networks: [edge, proxy]
+    healthcheck:
+      test: [CMD, traefik, healthcheck, --ping]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.50
+    restart: unless-stopped
+    profiles: [runtime]
+
+  mariadb:
+    <<: *hardening
+    image: "${MARIADB_IMAGE:?Set MARIADB_IMAGE to an immutable tag@sha256 digest}"
+    user: "${MARIADB_UID:-999}:${MAILTRAIN_SECRET_GID:-10001}"
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_secret
+      MAILTRAIN_DB_NAME: "${MAILTRAIN_DB_NAME:-mailtrain}"
+      MAILTRAIN_DB_MIGRATION_USER: "${MAILTRAIN_DB_MIGRATION_USER:-mailtrain_migrate}"
+      MAILTRAIN_DB_RUNTIME_USER: "${MAILTRAIN_DB_RUNTIME_USER:-mailtrain_runtime}"
+      MAILTRAIN_DB_REPORT_USER: "${MAILTRAIN_DB_REPORT_USER:-mailtrain_report}"
+      MAILTRAIN_DB_MIGRATION_SECRET_FILE: /run/secrets/db_migration_secret
+      MAILTRAIN_DB_RUNTIME_SECRET_FILE: /run/secrets/db_runtime_secret
+      MAILTRAIN_DB_REPORT_SECRET_FILE: /run/secrets/db_report_secret
+    command:
+      - --require-secure-transport=ON
+      - --ssl-ca=/run/secrets/db_ca
+      - --ssl-cert=/run/secrets/db_server_cert
+      - --ssl-key=/run/secrets/db_server_key
+    secrets: [db_root_secret, db_migration_secret, db_runtime_secret, db_report_secret, db_ca, db_server_cert, db_server_key]
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./mariadb-init.sh:/docker-entrypoint-initdb.d/10-mailtrain-users.sh:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /run/mysqld:rw,nosuid,nodev,size=16m,uid=${MARIADB_UID:-999},gid=${MAILTRAIN_SECRET_GID:-10001},mode=0750
+    networks: [backend]
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 15s
+      timeout: 8s
+      retries: 10
+      start_period: 45s
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.00
+    restart: unless-stopped
+
+  redis:
+    <<: *hardening
+    image: "${REDIS_IMAGE:?Set REDIS_IMAGE to an immutable tag@sha256 digest}"
+    user: "${REDIS_UID:-999}:${MAILTRAIN_SECRET_GID:-10001}"
+    entrypoint: [/bin/sh, /usr/local/bin/mailtrain-redis-entrypoint.sh]
+    secrets: [redis_secret]
+    volumes:
+      - redis-data:/data
+      - ./redis-entrypoint.sh:/usr/local/bin/mailtrain-redis-entrypoint.sh:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /run/redis:rw,noexec,nosuid,nodev,size=4m,uid=${REDIS_UID:-999},gid=${MAILTRAIN_SECRET_GID:-10001},mode=0700
+    networks: [backend]
+    healthcheck:
+      test: [CMD, /bin/sh, /usr/local/bin/mailtrain-redis-entrypoint.sh, health]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 0.50
+    restart: unless-stopped
+
+  mongo:
+    <<: *hardening
+    image: "${MONGO_IMAGE:?Set MONGO_IMAGE to an immutable tag@sha256 digest}"
+    user: "${MONGO_UID:-999}:${MAILTRAIN_SECRET_GID:-10001}"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_ROOT_USER:-mailtrain_root}"
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/mongo_root_secret
+      MAILTRAIN_MONGO_USER: "${MAILTRAIN_MONGO_USER:-mailtrain_zonemta}"
+      MAILTRAIN_MONGO_SECRET_FILE: /run/secrets/mongo_secret
+    secrets: [mongo_root_secret, mongo_secret]
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/10-mailtrain-user.js:ro
+      - ./mongo-healthcheck.js:/usr/local/lib/mailtrain-mongo-healthcheck.js:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    networks: [backend]
+    healthcheck:
+      test: [CMD, mongosh, --nodb, --quiet, --file, /usr/local/lib/mailtrain-mongo-healthcheck.js]
+      interval: 20s
+      timeout: 8s
+      retries: 10
+      start_period: 45s
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.00
+    restart: unless-stopped
+
+  migrate:
+    <<: *hardening
+    image: "${MAILTRAIN_IMAGE:?Set MAILTRAIN_IMAGE to this commit at an immutable sha256 digest}"
+    user: "10001:10001"
+    entrypoint: [/bin/sh, /app/deploy/netcup/mailtrain-entrypoint.sh]
+    environment:
+      MAILTRAIN_MODE: migrate
+      MAILTRAIN_DB_HOST: mariadb
+      MAILTRAIN_DB_NAME: "${MAILTRAIN_DB_NAME:-mailtrain}"
+      MAILTRAIN_DB_USER: "${MAILTRAIN_DB_MIGRATION_USER:-mailtrain_migrate}"
+      MAILTRAIN_DB_SECRET_FILE: /run/secrets/db_migration_secret
+      MAILTRAIN_MASTER_KEY_FILE: /run/secrets/mailtrain_master_key
+      MAILTRAIN_MASTER_KEY_ID: "${MAILTRAIN_MASTER_KEY_ID:?Set the non-secret active key id}"
+      MAILTRAIN_ADMIN_SECRET_FILE: /run/secrets/mailtrain_admin_secret
+    secrets: [db_migration_secret, db_ca, mailtrain_master_key, mailtrain_admin_secret]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /run/mailtrain:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001,mode=0700
+      - /run/mailtrain-config:rw,noexec,nosuid,nodev,size=4m,uid=10001,gid=10001,mode=0700
+    networks: [backend]
+    depends_on:
+      mariadb: {condition: service_healthy}
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.00
+    restart: "no"
+    profiles: [migration]
+
+  secret-migrate:
+    <<: *hardening
+    image: "${MAILTRAIN_IMAGE:?Set MAILTRAIN_IMAGE to this commit at an immutable sha256 digest}"
+    user: "10001:10001"
+    entrypoint: [/bin/sh, /app/deploy/netcup/mailtrain-entrypoint.sh]
+    command: [verify]
+    environment:
+      MAILTRAIN_MODE: secrets
+      MAILTRAIN_DB_HOST: mariadb
+      MAILTRAIN_DB_NAME: "${MAILTRAIN_DB_NAME:-mailtrain}"
+      MAILTRAIN_DB_USER: "${MAILTRAIN_DB_MIGRATION_USER:-mailtrain_migrate}"
+      MAILTRAIN_DB_SECRET_FILE: /run/secrets/db_migration_secret
+      MAILTRAIN_MASTER_KEY_FILE: /run/secrets/mailtrain_master_key
+      MAILTRAIN_MASTER_KEY_ID: "${MAILTRAIN_MASTER_KEY_ID:?Set the non-secret active key id}"
+      MAILTRAIN_ALLOW_PLAINTEXT_SECRETS: "true"
+    secrets: [db_migration_secret, db_ca, mailtrain_master_key]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /run/mailtrain-config:rw,noexec,nosuid,nodev,size=4m,uid=10001,gid=10001,mode=0700
+    networks: [backend]
+    depends_on:
+      mariadb: {condition: service_healthy}
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.00
+    restart: "no"
+    profiles: [migration]
+
+  files-init:
+    image: "${MAILTRAIN_IMAGE:?Set MAILTRAIN_IMAGE to this commit at an immutable sha256 digest}"
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [/bin/sh, /app/deploy/netcup/files-init.sh]
+    network_mode: none
+    volumes:
+      - mailtrain-files:/app/server/files
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.25
+    restart: "no"
+    profiles: [maintenance]
+
+  mailtrain:
+    <<: *hardening
+    image: "${MAILTRAIN_IMAGE:?Set MAILTRAIN_IMAGE to this commit at an immutable sha256 digest}"
+    user: "10001:10001"
+    entrypoint: [/bin/sh, /app/deploy/netcup/mailtrain-entrypoint.sh]
+    environment:
+      MAILTRAIN_MODE: app
+      MAILTRAIN_DB_HOST: mariadb
+      MAILTRAIN_DB_NAME: "${MAILTRAIN_DB_NAME:-mailtrain}"
+      MAILTRAIN_DB_USER: "${MAILTRAIN_DB_RUNTIME_USER:-mailtrain_runtime}"
+      MAILTRAIN_DB_SECRET_FILE: /run/secrets/db_runtime_secret
+      MAILTRAIN_REDIS_SECRET_FILE: /run/secrets/redis_secret
+      MAILTRAIN_MONGO_USER: "${MAILTRAIN_MONGO_USER:-mailtrain_zonemta}"
+      MAILTRAIN_MONGO_SECRET_FILE: /run/secrets/mongo_secret
+      MAILTRAIN_SESSION_SECRET_FILE: /run/secrets/mailtrain_session_secret
+      MAILTRAIN_MASTER_KEY_FILE: /run/secrets/mailtrain_master_key
+      MAILTRAIN_MASTER_KEY_ID: "${MAILTRAIN_MASTER_KEY_ID:?Set the non-secret active key id}"
+      MAILTRAIN_TRUSTED_HOST: "${MAILTRAIN_TRUSTED_HOST:?Set trusted hostname}"
+      MAILTRAIN_SANDBOX_HOST: "${MAILTRAIN_SANDBOX_HOST:?Set sandbox hostname}"
+      MAILTRAIN_PUBLIC_HOST: "${MAILTRAIN_PUBLIC_HOST:?Set public hostname}"
+      BUILTIN_ZONE_MTA_CONFIG: /run/mailtrain/builtin-zonemta.json
+    secrets: [db_runtime_secret, db_ca, redis_secret, mongo_secret, mailtrain_session_secret, mailtrain_master_key]
+    expose: ["3000", "3003", "3004"]
+    volumes:
+      - mailtrain-files:/app/server/files
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m
+      - /run/mailtrain:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001,mode=0700
+      - /run/mailtrain-config:rw,noexec,nosuid,nodev,size=4m,uid=10001,gid=10001,mode=0700
+    networks: [proxy, backend, egress]
+    depends_on:
+      mariadb: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, /app/deploy/netcup/healthcheck.js]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.00
+    restart: unless-stopped
+    profiles: [runtime]
+
+networks:
+  edge: {}
+  proxy: {internal: true}
+  backend: {internal: true}
+  egress: {}
+
+volumes:
+  mariadb-data: {}
+  redis-data: {}
+  mongo-data: {}
+  mailtrain-files: {}
+
+secrets:
+  db_root_secret: {file: "${DB_ROOT_SECRET_FILE:?Set DB_ROOT_SECRET_FILE}"}
+  db_migration_secret: {file: "${DB_MIGRATION_SECRET_FILE:?Set DB_MIGRATION_SECRET_FILE}"}
+  db_runtime_secret: {file: "${DB_RUNTIME_SECRET_FILE:?Set DB_RUNTIME_SECRET_FILE}"}
+  db_report_secret: {file: "${DB_REPORT_SECRET_FILE:?Set DB_REPORT_SECRET_FILE}"}
+  db_ca: {file: "${DB_CA_FILE:?Set DB_CA_FILE}"}
+  db_server_cert: {file: "${DB_SERVER_CERT_FILE:?Set DB_SERVER_CERT_FILE}"}
+  db_server_key: {file: "${DB_SERVER_KEY_FILE:?Set DB_SERVER_KEY_FILE}"}
+  redis_secret: {file: "${REDIS_SECRET_FILE:?Set REDIS_SECRET_FILE}"}
+  mongo_root_secret: {file: "${MONGO_ROOT_SECRET_FILE:?Set MONGO_ROOT_SECRET_FILE}"}
+  mongo_secret: {file: "${MONGO_SECRET_FILE:?Set MONGO_SECRET_FILE}"}
+  mailtrain_admin_secret: {file: "${MAILTRAIN_ADMIN_SECRET_FILE:?Set MAILTRAIN_ADMIN_SECRET_FILE}"}
+  mailtrain_session_secret: {file: "${MAILTRAIN_SESSION_SECRET_FILE:?Set MAILTRAIN_SESSION_SECRET_FILE}"}
+  mailtrain_master_key: {file: "${MAILTRAIN_MASTER_KEY_FILE:?Set MAILTRAIN_MASTER_KEY_FILE}"}

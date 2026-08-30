@@ -20,7 +20,7 @@ const { SubscriptionStatus, SubscriptionSource } = require('../../shared/lists')
 const openpgp = require('openpgp');
 const cors = require('cors');
 const cache = require('memory-cache');
-const geoip = require('geoip-ultralight');
+const geoip = require('../lib/geoip');
 const passport = require('../lib/passport');
 
 const tools = require('../lib/tools');
@@ -29,6 +29,7 @@ const mailHelpers = require('../lib/subscription-mail-helpers');
 const interoperableErrors = require('../../shared/interoperable-errors');
 
 const { cleanupFromPost } = require('../lib/helpers');
+const {subscriptionRateLimiters} = require('../lib/request-rate-limiters');
 
 const originWhitelist = config.cors && config.cors.origins || [];
 
@@ -222,7 +223,7 @@ router.getAsync('/:cid', passport.csrfProtection, async (req, res) => {
 
 router.options('/:cid/subscribe', cors(corsOptions));
 
-router.postAsync('/:cid/subscribe', passport.parseForm, corsOrCsrfProtection, async (req, res) => {
+router.postAsync('/:cid/subscribe', passport.parseForm, subscriptionRateLimiters.subscribe, corsOrCsrfProtection, async (req, res) => {
     if (req.xhr) {
         req.needsAPIJSONResponse = true;
     }
@@ -297,7 +298,7 @@ router.postAsync('/:cid/subscribe', passport.parseForm, corsOrCsrfProtection, as
         const confirmCid = await confirmations.addConfirmation(list.id, 'subscribe', req.ip, data);
 
         if (!testsPass) {
-            log.info('Subscription', 'Confirmation message for %s marked to be skipped (%s)', email, JSON.stringify(data));
+            log.info('Subscription', 'Confirmation message marked to be skipped for list %s', list.id);
         } else {
             await mailHelpers.sendConfirmSubscription(req.locale, list, email, confirmCid, subscriptionData);
         }
@@ -396,7 +397,7 @@ router.getAsync('/:lcid/manage/:ucid', passport.csrfProtection, async (req, res)
     res.send(htmlRenderer(data));
 });
 
-router.postAsync('/:lcid/manage', passport.parseForm, passport.csrfProtection, async (req, res) => {
+router.postAsync('/:lcid/manage', passport.parseForm, subscriptionRateLimiters.mutation, passport.csrfProtection, async (req, res) => {
     const list = await lists.getByCid(contextHelpers.getAdminContext(), req.params.lcid);
 
     try {
@@ -446,7 +447,7 @@ router.getAsync('/:lcid/manage-address/:ucid', passport.csrfProtection, async (r
 });
 
 
-router.postAsync('/:lcid/manage-address', passport.parseForm, passport.csrfProtection, async (req, res) => {
+router.postAsync('/:lcid/manage-address', passport.parseForm, subscriptionRateLimiters.mutation, passport.csrfProtection, async (req, res) => {
     const list = await lists.getByCid(contextHelpers.getAdminContext(), req.params.lcid);
 
     const emailNew = cleanupFromPost(req.body['EMAIL_NEW']);
@@ -548,7 +549,7 @@ router.getAsync('/:lcid/unsubscribe/:ucid', passport.csrfProtection, async (req,
 });
 
 
-router.postAsync('/:lcid/unsubscribe', passport.parseForm, passport.csrfProtection, async (req, res) => {
+router.postAsync('/:lcid/unsubscribe', passport.parseForm, subscriptionRateLimiters.mutation, passport.csrfProtection, async (req, res) => {
     const list = await lists.getByCid(contextHelpers.getAdminContext(), req.params.lcid);
 
     const campaignCid = cleanupFromPost(req.body.campaign);
@@ -640,9 +641,9 @@ router.postAsync('/publickey', passport.parseForm, async (req, res) => {
 
     let privKey;
     try {
-        privKey = openpgp.key.readArmored(configItems.pgpPrivateKey).keys[0];
-        if (configItems.pgpPassphrase && !privKey.decrypt(configItems.pgpPassphrase)) {
-            privKey = false;
+        privKey = await openpgp.readPrivateKey({armoredKey: configItems.pgpPrivateKey});
+        if (configItems.pgpPassphrase) {
+            privKey = await openpgp.decryptKey({privateKey: privKey, passphrase: configItems.pgpPassphrase});
         }
     } catch (E) {
         // just ignore if failed

@@ -1,12 +1,12 @@
 'use strict';
 
-import htmlparser from 'htmlparser2'
+import {Parser} from 'htmlparser2'
 import min from 'lodash/min';
 import {BodyComponent, HeadComponent, MJML} from "../../lib/mjml";
-import shortid from "shortid";
+import {nanoid} from "nanoid";
 
 function getId() {
-    return shortid.generate();
+    return nanoid();
 }
 
 const parents = [];
@@ -30,7 +30,7 @@ function handleMosaicoAttributes(block, src) {
     let newSrc = src;
     let offset = 0;
 
-    const parser = new htmlparser.Parser(
+    const parser = new Parser(
         {
             onopentag: (name, attrs) => {
                 const fragment = src.substring(parser.startIndex, parser.endIndex);

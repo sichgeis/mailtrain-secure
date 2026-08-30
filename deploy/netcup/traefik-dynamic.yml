@@ -1,0 +1,53 @@
+http:
+  routers:
+    mailtrain-zone-mta-internal:
+      rule: Host(`__TRUSTED_HOST__`) && PathPrefix(`/webhooks/zone-mta`)
+      entryPoints: [websecure]
+      priority: 200
+      middlewares: [mailtrain-zone-mta-internal-only]
+      service: mailtrain-trusted
+      tls: {certResolver: letsencrypt}
+    mailtrain-mailgun:
+      rule: Host(`__TRUSTED_HOST__`) && PathPrefix(`/webhooks/mailgun`)
+      entryPoints: [websecure]
+      priority: 100
+      middlewares: [mailtrain-mailgun-request-limit, mailtrain-browser-security]
+      service: mailtrain-trusted
+      tls: {certResolver: letsencrypt}
+    mailtrain-trusted:
+      rule: Host(`__TRUSTED_HOST__`)
+      entryPoints: [websecure]
+      middlewares: [mailtrain-request-limit, mailtrain-browser-security]
+      service: mailtrain-trusted
+      tls: {certResolver: letsencrypt}
+    mailtrain-sandbox:
+      rule: Host(`__SANDBOX_HOST__`)
+      entryPoints: [websecure]
+      middlewares: [mailtrain-request-limit, mailtrain-browser-security]
+      service: mailtrain-sandbox
+      tls: {certResolver: letsencrypt}
+    mailtrain-public:
+      rule: Host(`__PUBLIC_HOST__`)
+      entryPoints: [websecure]
+      middlewares: [mailtrain-request-limit, mailtrain-browser-security]
+      service: mailtrain-public
+      tls: {certResolver: letsencrypt}
+  middlewares:
+    mailtrain-zone-mta-internal-only:
+      ipAllowList:
+        sourceRange: [127.0.0.0/8, "::1/128"]
+  services:
+    mailtrain-trusted:
+      loadBalancer:
+        servers: [{url: http://mailtrain:3000}]
+    mailtrain-sandbox:
+      loadBalancer:
+        servers: [{url: http://mailtrain:3003}]
+    mailtrain-public:
+      loadBalancer:
+        servers: [{url: http://mailtrain:3004}]
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: true

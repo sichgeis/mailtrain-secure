@@ -7,6 +7,7 @@ const shares = require('../models/shares');
 const urls = require('./urls');
 const settings = require('../models/settings');
 const contextHelpers = require('./context-helpers');
+const {isReportExecutionEnabled} = require('./report-execution-policy');
 
 
 async function getAnonymousConfig(context, appType) {
@@ -47,7 +48,7 @@ async function getAuthenticatedConfig(context) {
         tagLanguages: config.tagLanguages,
         mosaico: config.mosaico,
         verpEnabled: config.verp.enabled,
-        reportsEnabled: config.reports.enabled,
+        reportsEnabled: isReportExecutionEnabled(config.reports),
         mapsApiKey: setts.mapsApiKey,
         builtinZoneMTAEnabled: config.builtinZoneMTA.enabled,
         shoutout: setts.shoutout
@@ -57,4 +58,3 @@ async function getAuthenticatedConfig(context) {
 
 module.exports.getAuthenticatedConfig = getAuthenticatedConfig;
 module.exports.getAnonymousConfig = getAnonymousConfig;
-

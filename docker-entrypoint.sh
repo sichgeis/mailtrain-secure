@@ -13,13 +13,14 @@ URL_BASE_SANDBOX=${URL_BASE_SANDBOX:-"http://localhost:${PORT_SANDBOX}"}
 URL_BASE_PUBLIC=${URL_BASE_PUBLIC:-"http://localhost:${PORT_PUBLIC}"}
 WWW_HOST=${WWW_HOST:-'0.0.0.0'}
 WWW_PROXY=${WWW_PROXY:-'false'}
-WWW_SECRET=${WWW_SECRET:-$(pwgen -1)}
+WWW_SECRET=${WWW_SECRET:-''}
+SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-'true'}
 WITH_LDAP=${WITH_LDAP:-'false'}
 LDAP_HOST=${LDAP_HOST:-'ldap'}
 LDAP_PORT=${LDAP_PORT:-'389'}
 LDAP_SECURE=${LDAP_SECURE:-'false'}
 LDAP_BIND_USER=${LDAP_BIND_USER:-'name@company.net'}
-LDAP_BIND_PASS=${LDAP_BIND_PASS:-'mySecretPassword'}
+LDAP_BIND_PASS=${LDAP_BIND_PASS:-''}
 LDAP_FILTER=${LDAP_FILTER:-${default_filter}}
 LDAP_BASEDN=${LDAP_BASEDN:-ou=users,dc=company}
 LDAP_UIDTAG=${LDAP_UIDTAG:-'username'}
@@ -40,12 +41,14 @@ MYSQL_HOST=${MYSQL_HOST:-'mysql'}
 MYSQL_PORT=${MYSQL_PORT:-'3306'}
 MYSQL_DATABASE=${MYSQL_DATABASE:-'mailtrain'}
 MYSQL_USER=${MYSQL_USER:-'mailtrain'}
-MYSQL_PASSWORD=${MYSQL_PASSWORD:-'mailtrain'}
+MYSQL_PASSWORD=${MYSQL_PASSWORD:-''}
 WITH_ZONE_MTA=${WITH_ZONE_MTA:-'true'}
 POOL_NAME=${POOL_NAME:-$(hostname)}
 LOG_LEVEL=${LOG_LEVEL:-'info'}
-ADMIN_PASSWORD=${ADMIN_PASSWORD:-'test'}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-''}
 ADMIN_ACCESS_TOKEN=${ADMIN_ACCESS_TOKEN:-''}
+WITH_REPORTS=${WITH_REPORTS:-'false'}
+REPORTS_UNSAFE_JAVASCRIPT=${REPORTS_UNSAFE_JAVASCRIPT:-'false'}
 DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-'en-US'}
 WITH_POSTFIXBOUNCE=${WITH_POSTFIXBOUNCE:-'false'}
 POSTFIXBOUNCE_PORT=${POSTFIXBOUNCE_PORT:-'5699'}
@@ -59,10 +62,24 @@ if [ ! -z "$MAILTRAIN_SETTING" ]; then
     exit 1
 fi
 
+export ADMIN_PASSWORD ADMIN_ACCESS_TOKEN
+NODE_ENV=production node server/setup/validate-admin-password.js
+
+if [ -z "$MYSQL_PASSWORD" ]; then
+    echo 'Error: MYSQL_PASSWORD is required'
+    exit 1
+fi
+if [ "$WITH_LDAP" = "true" ] && [ -z "$LDAP_BIND_PASS" ]; then
+    echo 'Error: LDAP_BIND_PASS is required when LDAP is enabled'
+    exit 1
+fi
+
 if [ -f server/config/production.yaml ]; then
     echo 'Info: application/production.yaml already provisioned'
 else
     echo 'Info: Generating application/production.yaml'
+    export WWW_SECRET SESSION_COOKIE_SECURE
+    NODE_ENV=production node server/setup/validate-session-secret.js
 
     # Basic configuration
     cat >> server/config/production.yaml <<EOT
@@ -76,6 +93,11 @@ www:
   trustedUrlBase: $URL_BASE_TRUSTED
   sandboxUrlBase: $URL_BASE_SANDBOX
   publicUrlBase: $URL_BASE_PUBLIC
+
+security:
+  sessions:
+    name: __Host-mailtrain.sid
+    secure: $SESSION_COOKIE_SECURE
 
 mysql:
   host: $MYSQL_HOST
@@ -104,6 +126,10 @@ log:
   level: $LOG_LEVEL
 
 defaultLanguage: $DEFAULT_LANGUAGE
+
+reports:
+  enabled: $WITH_REPORTS
+  unsafeJavaScriptExecution: $REPORTS_UNSAFE_JAVASCRIPT
 
 EOT
 
@@ -201,23 +227,6 @@ if [ "$WITH_ZONE_MTA" = "true" ]; then
 fi
 
 cd server
-# Install passport-cas2 node package if CAS selected
-if [ "$WITH_CAS" = "true" ]; then
-  echo 'Info: Installing passport-cas2'
-  NODE_ENV=production npm install passport-cas2
-fi
-
-if [ "$WITH_LDAP" = "true" ]; then
-  if [ "$LDAP_METHOD" = "ldapjs" ]; then
-    echo 'Info: Install passport-ldapjs'
-    npm install passport-ldapjs
-  fi
-  if [ "$LDAP_METHOD" = "ldapauth" ]; then
-    echo 'Info: Install passport-ldapauth'
-    npm install passport-ldapauth
-  fi
-fi
-
-NODE_ENV=production node setup/docker-entrypoint-db-setup.js "$ADMIN_PASSWORD" "$ADMIN_ACCESS_TOKEN"
+NODE_ENV=production node setup/docker-entrypoint-db-setup.js
 
 NODE_ENV=production node index.js
