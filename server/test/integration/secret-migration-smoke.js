@@ -89,7 +89,7 @@ async function main() {
     process.stdout.write(`Secret migration ${process.argv[2]} check passed\n`);
 }
 
-main().then(() => knex.destroy()).catch(err => {
+main().then(() => knex.destroy()).then(() => process.exit(0)).catch(err => {
     process.stderr.write(`Secret migration integration check failed: ${err.name || 'error'}\n`);
     knex.destroy().finally(() => process.exit(1));
 });
