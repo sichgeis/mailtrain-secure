@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const knex = require('../../lib/knex');
 const {lookupCandidates, revealMailerSettings, revealSetting} = require('../../lib/secret-storage');
+const users = require('../../models/users');
 
 const FIXTURE = {
     accessToken: 'synthetic-legacy-access-token',
@@ -63,13 +64,27 @@ async function verify() {
     assert.equal(matchesCandidate(FIXTURE.resetToken, 'reset-token', user.reset_token_key_id, user.reset_token_hash), true);
 }
 
+async function verifyCompatibility() {
+    const user = await users.getByAccessToken(FIXTURE.accessToken);
+    assert.equal(user.id, 1);
+    assert.equal(await users.isPasswordResetTokenValid('admin', FIXTURE.resetToken), true);
+
+    const migrated = await knex('users').where({id: 1}).first();
+    assert.equal(migrated.access_token, null);
+    assert.equal(migrated.reset_token, null);
+    assert.equal(matchesCandidate(FIXTURE.accessToken, 'access-token', migrated.access_token_key_id, migrated.access_token_hash), true);
+    assert.equal(matchesCandidate(FIXTURE.resetToken, 'reset-token', migrated.reset_token_key_id, migrated.reset_token_hash), true);
+}
+
 async function main() {
     if (process.argv[2] === 'seed') {
         await seed();
+    } else if (process.argv[2] === 'compatibility') {
+        await verifyCompatibility();
     } else if (process.argv[2] === 'verify') {
         await verify();
     } else {
-        throw new Error('Usage: secret-migration-smoke.js <seed|verify>');
+        throw new Error('Usage: secret-migration-smoke.js <seed|compatibility|verify>');
     }
     process.stdout.write(`Secret migration ${process.argv[2]} check passed\n`);
 }

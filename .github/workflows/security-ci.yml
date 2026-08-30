@@ -182,6 +182,7 @@ jobs:
         run: |
           npm run test:integration
           node test/integration/secret-migration-smoke.js seed
+          node test/integration/secret-migration-smoke.js compatibility
           npm run security:secrets -- dry-run
           npm run security:secrets -- migrate
           npm run security:secrets -- verify

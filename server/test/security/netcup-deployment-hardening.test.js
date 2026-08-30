@@ -112,6 +112,13 @@ test('datastore credentials, TLS, and database duties are separated', () => {
     assert.match(bootstrap, /GRANT ALL PRIVILEGES ON/);
 });
 
+test('rendered app configuration enables production-safe session cookies', () => {
+    const renderer = read('render-config.js');
+    assert.match(renderer, /configuration\.security\.sessions\s*=\s*\{/);
+    assert.match(renderer, /name:\s*['"]__Host-mailtrain\.sid['"]/);
+    assert.match(renderer, /secure:\s*true/);
+});
+
 test('production images install at build time and run Mailtrain as non-root', () => {
     const dockerfile = fs.readFileSync(path.join(repositoryRoot, 'Dockerfile'), 'utf8');
     const legacyEntrypoint = fs.readFileSync(path.join(repositoryRoot, 'docker-entrypoint.sh'), 'utf8');
