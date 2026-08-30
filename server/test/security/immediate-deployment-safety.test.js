@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {Readable} = require('node:stream');
+const {PassThrough, Readable} = require('node:stream');
 const test = require('node:test');
 const yaml = require('js-yaml');
 const {assertAggregateUploadSize, createAggregateDiskStorage} = require('../../lib/upload-limits');
@@ -127,5 +127,20 @@ test('aggregate upload storage aborts before writing beyond the request budget',
         .reduce((total, filename) => total + fs.statSync(path.join(destination, filename)).size, 0);
     assert.ok(bytesOnDisk <= 16);
     await new Promise(resolve => storage._removeFile(req, first.file, resolve));
+    fs.rmSync(destination, {recursive: true, force: true});
+});
+
+test('aggregate upload storage cannot orphan a file when cleanup races completion', async () => {
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-upload-abort-'));
+    const storage = createAggregateDiskStorage({destination, maxTotalBytes: 16});
+    const req = {};
+    const stream = new PassThrough();
+    const file = {stream, originalname: 'synthetic.bin', mimetype: 'application/octet-stream'};
+    const completed = new Promise(resolve => storage._handleFile(req, file, (err, stored) => resolve({err, stored})));
+    await new Promise(resolve => storage._removeFile(req, file, resolve));
+    stream.end(Buffer.alloc(8));
+    const result = await completed;
+    assert.equal(result.err.code, 'EUPLOADABORTED');
+    assert.deepEqual(fs.readdirSync(destination), []);
     fs.rmSync(destination, {recursive: true, force: true});
 });
