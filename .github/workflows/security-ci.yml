@@ -81,7 +81,7 @@ jobs:
         run: set -o pipefail; npm audit --omit=dev --audit-level=high --prefix zone-mta --json | tee zone-mta-production-audit.json
       - name: Emit SPDX software bill of materials
         if: always()
-        uses: anchore/sbom-action@d8a2c0130026bf585de5c176ab8f7ce62d75bf04
+        uses: anchore/sbom-action@aa80c8c5bd439a416a62804f2151ab38c671a638
         with:
           image: mailtrain-security-ci:${{ github.sha }}
           format: spdx-json
