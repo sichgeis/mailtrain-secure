@@ -13,7 +13,9 @@ This directory is a reviewable production template, not an automatic deployment.
 
 The migration container uses the database-scoped migration principal and must finish before the runtime starts. The runtime principal has DML plus schema-local `CREATE`, `ALTER`, `DROP`, and `INDEX` because Mailtrain creates subscriber/import tables during normal list and import operations. It has no global privileges or grant option. The report principal is read-only and reports remain disabled. Removing runtime DDL requires a later application schema redesign; pretending the application is CRUD-only would break existing behavior. MariaDB initialization scripts run only for an empty data volume; for an existing database, create and audit these three principals manually in staging before using this template.
 
-LDAP and CAS extensions are no longer downloaded during startup. If needed, pin them in a reviewed derived image and lockfile. Do not restore runtime package installation.
+LDAP and CAS adapters are installed from the reviewed lockfile during image build and are never downloaded at startup. Do not restore runtime package installation.
+
+The rendered Netcup configuration explicitly disables both automatic GDPR unsubscribe-deletion jobs to preserve the reviewed legacy production behavior. This retains subscriber data after unsubscribe or complaint; change either setting only through a separate privacy-policy review and a staged data-retention migration.
 
 ## Backup and restore rehearsal
 

@@ -44,6 +44,10 @@ const configuration = {
     security: {
         database: {runMigrationsAtStartup: false}
     },
+    gdpr: {
+        deleteDataAfterUnsubscribe: {enabled: false},
+        deleteSubscriptionAfterUnsubscribe: {enabled: false}
+    },
     reports: {enabled: false, unsafeJavaScriptExecution: false}
 };
 
