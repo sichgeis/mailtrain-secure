@@ -27,17 +27,11 @@ function isSafeUrl(value, attribute) {
     }
 }
 
-function sanitizeStyle(value) {
-    return String(value || '').split(';').map(part => part.trim())
-        .filter(part => part && !/(?:url\s*\(|expression\s*\(|behavior\s*:|-moz-binding|@import)/i.test(part))
-        .join('; ');
-}
-
 function sanitizeCssDeclarations(style) {
     const declarations = [];
     for (const property of Array.from(style || [])) {
         const value = style.getPropertyValue(property);
-        if (/(?:url\s*\(|expression\s*\(|behavior\s*:|-moz-binding|javascript\s*:|data\s*:)/i.test(value)) {
+        if (property.startsWith('--') || /(?:url\s*\(|var\s*\(|expression\s*\(|behavior\s*:|-moz-binding|javascript\s*:|data\s*:)/i.test(value)) {
             continue;
         }
         declarations.push(`${property}:${value}${style.getPropertyPriority(property) ? ' !important' : ''}`);
@@ -99,7 +93,7 @@ function sanitizeUntrustedHtml(html) {
             } else if (urlAttributes.has(name) && !isSafeUrl(attribute.value, name)) {
                 element.removeAttribute(attribute.name);
             } else if (name === 'style') {
-                const style = sanitizeStyle(attribute.value);
+                const style = sanitizeCssDeclarations(element.style);
                 if (style) {
                     element.setAttribute('style', style);
                 } else {

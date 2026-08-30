@@ -102,7 +102,7 @@ test('campaign uploads and OpenPGP buffering have explicit production bounds', (
     assert.ok(defaults.security.uploads.maxTotalBytes >= defaults.security.uploads.maxFileSizeBytes);
     assert.ok(Math.ceil(defaults.security.uploads.maxTotalBytes * 4 / 3) + 4 * 1024 * 1024 < defaults.security.openPgp.maxMessageBytes);
     assert.match(uploads, /limits:/);
-    assert.match(uploads, /assertAggregateUploadSize/);
+    assert.match(uploads, /createAggregateDiskStorage/);
     assert.match(mailers, /maxMessageBytes/);
 
     assert.doesNotThrow(() => assertAggregateUploadSize([{size: 8}, {size: 8}], 16));

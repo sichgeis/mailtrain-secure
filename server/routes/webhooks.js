@@ -244,25 +244,30 @@ router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => 
         maxClockSkewMs: webhookConfig.maxClockSkewMs,
         maxDeliveryAgeMs: webhookConfig.maxDeliveryAgeMs
     });
-    const replayReservation = await deliveryLedger.reserve('sendgrid', sendgridSignature);
     let events = [].concat(req.body || []);
 
-    await runReplayProtected(replayReservation, async () => {
-        for (const evt of events) {
-            if (!evt) {
-                continue;
-            }
+    for (const evt of events) {
+        if (!evt) {
+            continue;
+        }
+        if (typeof evt.sg_event_id !== 'string' || !evt.sg_event_id || evt.sg_event_id.length > 255) {
+            const error = new Error('SendGrid event id is missing or invalid');
+            error.status = 400;
+            throw error;
+        }
+        const replayReservation = await deliveryLedger.reserve('sendgrid-event', evt.sg_event_id);
+        await runReplayProtected(replayReservation, async () => {
 
             log.verbose('Sendgrid', 'Received authenticated event type "%s"', evt.event);
 
             const message = await campaigns.getMessageByCid(evt.campaign_id);
             if (!message) {
-                continue;
+                return;
             }
 
             switch (evt.event) {
                 case 'bounce':
-                // https://support.sparkpost.com/customer/portal/articles/1929896
+                    // https://support.sparkpost.com/customer/portal/articles/1929896
                     await campaigns.changeStatusByMessage(contextHelpers.getAdminContext(), message, CampaignMessageStatus.BOUNCED, true);
                     log.verbose('Sendgrid', 'Marked an authenticated provider event as bounced');
                     break;
@@ -278,8 +283,8 @@ router.postAsync('/sendgrid', webhookRateLimiters.sendgrid, async (req, res) => 
                     log.verbose('Sendgrid', 'Marked an authenticated provider event as unsubscribed');
                     break;
             }
-        }
-    });
+        });
+    }
 
     return res.json({
         success: true
