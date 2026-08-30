@@ -34,6 +34,8 @@ const {castToInteger} = require('../lib/helpers');
 
 const { fileCache } = require('../lib/file-cache');
 const {resolvePathWithinBase} = require('../lib/safe-path');
+const {sandboxContentSecurityPolicy} = require('../lib/browser-security');
+const {anonymousRestrictedAccessToken} = require('../../shared/urls');
 
 const legacyMosaicoUploadsDir = path.resolve(__dirname, '..', '..', 'client', 'static', 'mosaico', 'uploads');
 
@@ -205,6 +207,14 @@ async function getRouter(appType) {
 
         router.getAsync('/editor', passport.csrfProtection, async (req, res) => {
             const mailtrainConfig = await clientHelpers.getAnonymousConfig(req.context, appType);
+
+            const originalPath = new URL(req.originalUrl, 'http://mailtrain.invalid').pathname;
+            if (originalPath === `/${anonymousRestrictedAccessToken}/mosaico/editor`) {
+                res.set('Content-Security-Policy', sandboxContentSecurityPolicy({
+                    trustedOrigin: config.www.trustedUrlBase,
+                    allowUnsafeEval: true
+                }));
+            }
 
             let languageStrings = null;
             const lang = req.locale.language;

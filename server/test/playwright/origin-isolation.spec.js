@@ -34,7 +34,10 @@ test('sandbox and public origins receive role-specific framing policy', async ({
     expect(sandboxResponse.status()).toBe(200);
     expect(sandboxResponse.headers()['content-security-policy']).toContain('sandbox');
     expect(sandboxResponse.headers()['content-security-policy']).toContain(`frame-ancestors ${trustedOrigin}`);
-    expect(sandboxResponse.headers()['content-security-policy']).not.toContain("'unsafe-eval'");
+    expect(sandboxResponse.headers()['content-security-policy']).not.toContain('\'unsafe-eval\'');
+
+    const restrictedEditorResponse = await request.get(`${sandboxOrigin}/not-a-real-token/mosaico/editor`);
+    expect(restrictedEditorResponse.headers()['content-security-policy']).not.toContain('\'unsafe-eval\'');
 
     const publicResponse = await request.get(`${publicOrigin}/subscription/Hkj1vCoJb`);
     expect(publicResponse.status()).toBe(200);
@@ -146,18 +149,13 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
 
     const editorResponse = await editorResponsePromise;
     const editorCsp = editorResponse.headers()['content-security-policy'];
-    expect(editorCsp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(editorCsp).toContain('script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'');
     expect(editorCsp).toContain('sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts');
     expect(editorCsp).toContain(`frame-ancestors ${trustedOrigin}`);
 
     const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
-    await expect.poll(async () => {
-        let blockCount = 0;
-        for (const frame of page.frames()) {
-            blockCount += await frame.locator('[data-ko-block]').count();
-        }
-        return blockCount;
-    }, {timeout: 30000}).toBeGreaterThan(0);
+    await expect(editor.locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
+    await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
     await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
     expect(dialogs).not.toContain('Update your browser!');
 });
