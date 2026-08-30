@@ -35,6 +35,13 @@ test('abandoned high-risk runtime packages are not production dependencies', () 
     assert.equal(manifest('shared').devDependencies['node-sass'], undefined);
 });
 
+test('lockfiles do not fetch dependencies from mutable VCS or local paths', () => {
+    for (const workspace of workspaces) {
+        const lockfile = read(`${workspace}/package-lock.json`);
+        assert.doesNotMatch(lockfile, /"resolved":\s*"(?:git\+|github:|ssh:|file:)/, workspace);
+    }
+});
+
 test('CI pins third-party actions and service images to immutable digests', () => {
     const workflowSource = read('.github/workflows/security-ci.yml');
     const workflow = yaml.safeLoad(workflowSource);
