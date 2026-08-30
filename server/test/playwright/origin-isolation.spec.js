@@ -34,6 +34,10 @@ test('sandbox and public origins receive role-specific framing policy', async ({
     expect(sandboxResponse.status()).toBe(200);
     expect(sandboxResponse.headers()['content-security-policy']).toContain('sandbox');
     expect(sandboxResponse.headers()['content-security-policy']).toContain(`frame-ancestors ${trustedOrigin}`);
+    expect(sandboxResponse.headers()['content-security-policy']).not.toContain('\'unsafe-eval\'');
+
+    const restrictedEditorResponse = await request.get(`${sandboxOrigin}/not-a-real-token/mosaico/editor`);
+    expect(restrictedEditorResponse.headers()['content-security-policy']).not.toContain('\'unsafe-eval\'');
 
     const publicResponse = await request.get(`${publicOrigin}/subscription/Hkj1vCoJb`);
     expect(publicResponse.status()).toBe(200);
@@ -87,4 +91,71 @@ test('synthetic admin can log in through the trusted origin', async ({page}) => 
     expect(csrfCookie).toBeDefined();
     expect(csrfCookie.httpOnly).toBe(true);
     expect(csrfCookie.sameSite).toBe('Lax');
+});
+
+test('database-backed Mosaico editor initializes inside the sandbox origin', async ({page}) => {
+    const dialogs = [];
+    page.on('dialog', async dialog => {
+        dialogs.push(dialog.message());
+        await dialog.dismiss();
+    });
+
+    await page.goto(`${trustedOrigin}/login`);
+    await page.locator('#form_username').fill('admin');
+    await page.locator('#form_password').fill('test');
+    await Promise.all([
+        page.waitForURL(`${trustedOrigin}/`),
+        page.locator('button[type="submit"]').click()
+    ]);
+
+    const createdTemplate = await page.evaluate(async () => {
+        // eslint-disable-next-line no-undef
+        const response = await globalThis.fetch('/rest/templates', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                // eslint-disable-next-line no-undef
+                'X-CSRF-TOKEN': globalThis.csrfToken
+            },
+            body: JSON.stringify({
+                name: 'Playwright Mosaico initialization fixture',
+                description: 'Synthetic CI data',
+                type: 'mosaico',
+                tag_language: 'simple',
+                namespace: 1,
+                data: {
+                    mosaicoTemplate: 1
+                },
+                html: '',
+                text: ''
+            })
+        });
+
+        return {
+            status: response.status,
+            id: await response.json()
+        };
+    });
+
+    expect(createdTemplate.status).toBe(200);
+    expect(createdTemplate.id).toBeGreaterThan(0);
+
+    const editorResponsePromise = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.origin === sandboxOrigin && url.pathname === '/anonymous/mosaico/editor';
+    });
+    await page.goto(`${trustedOrigin}/templates/${createdTemplate.id}/edit`);
+
+    const editorResponse = await editorResponsePromise;
+    const editorCsp = editorResponse.headers()['content-security-policy'];
+    expect(editorCsp).toContain('script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'');
+    expect(editorCsp).toContain('sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts');
+    expect(editorCsp).toContain(`frame-ancestors ${trustedOrigin}`);
+
+    const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
+    await expect(editor.locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
+    await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
+    await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
+    expect(dialogs).not.toContain('Update your browser!');
 });

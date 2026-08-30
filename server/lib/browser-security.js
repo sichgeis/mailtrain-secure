@@ -45,6 +45,18 @@ function validateProxyTrust(value, {production = false} = {}) {
     }
 }
 
+function sandboxContentSecurityPolicy({
+    trustedOrigin = '\'self\'',
+    allowUnsafeEval = false
+} = {}) {
+    const scriptSources = ['\'self\'', '\'unsafe-inline\''];
+    if (allowUnsafeEval) {
+        scriptSources.push('\'unsafe-eval\'');
+    }
+
+    return `sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts; default-src 'self' data: blob:; script-src ${scriptSources.join(' ')}; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${trustedOrigin}`;
+}
+
 function securityHeaders(appType, {
     secure = false,
     trustedOrigin = '\'self\'',
@@ -59,7 +71,7 @@ function securityHeaders(appType, {
         headers['strict-transport-security'] = 'max-age=31536000; includeSubDomains';
     }
     if (appType === AppType.SANDBOXED) {
-        headers['content-security-policy'] = `sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${trustedOrigin}`;
+        headers['content-security-policy'] = sandboxContentSecurityPolicy({trustedOrigin});
     } else if (appType === AppType.PUBLIC) {
         headers['content-security-policy'] = 'default-src \'none\'; img-src https: data:; style-src \'unsafe-inline\' https:; font-src https: data:; script-src \'self\' \'unsafe-inline\' https:; connect-src \'self\'; form-action \'self\'; base-uri \'none\'; frame-ancestors \'none\'';
         headers['x-frame-options'] = 'DENY';
@@ -114,6 +126,7 @@ module.exports = {
     createHostCheckMiddleware,
     createOriginCheckMiddleware,
     createSecurityHeadersMiddleware,
+    sandboxContentSecurityPolicy,
     securityHeaders,
     untrustedContentSecurityPolicy,
     validateOriginSeparation,
