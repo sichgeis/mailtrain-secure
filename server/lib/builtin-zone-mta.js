@@ -110,6 +110,7 @@ async function createConfig() {
             'mailtrain-main': {
                 enabled: ['main'],
                 bounceUrl: `http://127.0.0.1:${config.www.trustedPort}/webhooks/zone-mta`,
+                bounceHost: new URL(config.www.trustedUrlBase).host,
                 bounceToken: getPassword()
             },
             'mailtrain-receiver': {
