@@ -57,7 +57,7 @@ async function getTemplate(template, locale) {
     }
 
     if (template.type === 'mjml') {
-        const compiled = mjml2html(source);
+        const compiled = await mjml2html(source);
 
         if (compiled.errors.length) {
             throw new Error(compiled.errors[0].message || compiled.errors[0]);
