@@ -1,5 +1,5 @@
 
-exports.up = function(knex, Promise) {
+exports.up = function(knex) {
   return knex.raw('SELECT table_name AS tableName FROM information_schema.tables WHERE table_schema = ?', [knex.client.database()])
     .then(function(result) {
        return result[0].reduce((chain, table) => chain.then(() => knex.raw(
