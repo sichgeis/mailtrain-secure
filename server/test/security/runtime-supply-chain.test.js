@@ -84,9 +84,11 @@ test('CI emits an SBOM and scans the exact built image with a pinned scanner', (
 
 test('Docker build inputs and npm installs are reproducible', () => {
     const dockerfile = read('Dockerfile');
+    const runtimeStage = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
     assert.match(dockerfile, /^# syntax=docker\/dockerfile:[^@\n]+@sha256:[0-9a-f]{64}$/m);
     assert.doesNotMatch(dockerfile, /npm install(?:\s|$)/);
     assert.doesNotMatch(dockerfile, /^FROM (?![^\n]*@sha256:)/m);
+    assert.match(runtimeStage, /RUN apk add[\s\S]*?&& rm -f \/var\/log\/apk\.log/);
     assert.equal(fs.existsSync(path.join(repositoryRoot, '.npmrc')), true);
     assert.match(read('.npmrc'), /audit=false/);
     assert.match(read('.npmrc'), /fund=false/);
