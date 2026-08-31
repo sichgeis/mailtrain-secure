@@ -88,7 +88,7 @@
     "juice": "12.1.2",
     "klaw-sync": "^6.0.0",
     "knex": "3.3.0",
-    "libmime": "^4.2.1",
+    "libmime": "^5.4.2",
     "mailparser": "3.9.17",
     "memory-cache": "^0.2.0",
     "mjml": "5.4.0",
