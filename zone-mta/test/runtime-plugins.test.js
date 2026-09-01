@@ -47,13 +47,11 @@ test('vendored core plugins initialize the configured safety hooks', async () =>
     const defaultHeaderHooks = new Map();
     const deliveryLoopHooks = new Map();
 
-    await new Promise((resolve, reject) => {
-        defaultHeaders.init({
-            config: {allowRoutingHeaders: []},
-            addHook(name, handler) {
-                defaultHeaderHooks.set(name, handler);
-            }
-        }, error => error ? reject(error) : resolve());
+    await defaultHeaders.init({
+        config: {allowRoutingHeaders: []},
+        addHook(name, handler) {
+            defaultHeaderHooks.set(name, handler);
+        }
     });
     await new Promise((resolve, reject) => {
         deliveryLoop.init({
