@@ -89,6 +89,8 @@ test('Docker build inputs and npm installs are reproducible', () => {
     assert.doesNotMatch(dockerfile, /npm install(?:\s|$)/);
     assert.doesNotMatch(dockerfile, /^FROM (?![^\n]*@sha256:)/m);
     assert.match(runtimeStage, /RUN apk add[\s\S]*?&& rm -f \/var\/log\/apk\.log/);
+    assert.match(runtimeStage, /imagemagick-jpeg=7\.1\.2\.30-r0/);
+    assert.match(runtimeStage, /imagemagick-webp=7\.1\.2\.30-r0/);
     assert.equal(fs.existsSync(path.join(repositoryRoot, '.npmrc')), true);
     assert.match(read('.npmrc'), /audit=false/);
     assert.match(read('.npmrc'), /fund=false/);
