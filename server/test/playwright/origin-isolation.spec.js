@@ -100,7 +100,7 @@ test('synthetic admin can log in through the trusted origin', async ({page}) => 
     expect(csrfCookie.sameSite).toBe('Lax');
 });
 
-test('regular campaign list selectors render table markup exactly once', async ({page}) => {
+test('selectable tables expose clear pointer, keyboard, and selection affordances', async ({page}) => {
     await page.goto(`${trustedOrigin}/login`);
     await page.locator('#form_username').fill('admin');
     await page.locator('#form_password').fill('test');
@@ -116,13 +116,39 @@ test('regular campaign list selectors render table markup exactly once', async (
     await expect(listsFieldset.getByRole('textbox')).toHaveCount(2);
     const secondListInput = listsFieldset.getByRole('textbox').last();
     await expect(secondListInput).toBeVisible();
+    await expect(secondListInput).toHaveCSS('cursor', 'pointer');
     await secondListInput.click();
 
     const selectorTable = secondListInput.locator('xpath=../following-sibling::div[1]');
-    await expect(selectorTable.locator('table')).toBeVisible();
+    const table = selectorTable.locator('table');
+    await expect(table).toBeVisible();
+    await expect(table).toHaveAttribute('role', 'grid');
     await expect(selectorTable.locator('thead th').first()).toHaveText('Name');
     await expect(selectorTable.locator('tbody td').first()).not.toContainText('<div>');
     await expect(selectorTable.locator('tbody code').first()).toBeVisible();
+
+    const firstRow = selectorTable.locator('tbody tr').first();
+    const firstRowLabel = await firstRow.locator('td').first().innerText();
+    await expect(firstRow).toHaveCSS('cursor', 'pointer');
+    await expect(firstRow).toHaveAttribute('tabindex', '0');
+    await expect(firstRow).toHaveAttribute('aria-selected', 'false');
+    await firstRow.focus();
+    await firstRow.press('Enter');
+    await expect(secondListInput).toHaveValue(firstRowLabel);
+
+    await secondListInput.click();
+    await expect(firstRow).toHaveAttribute('aria-selected', 'true');
+    const secondRow = selectorTable.locator('tbody tr').nth(1);
+    const secondRowLabel = await secondRow.locator('td').first().innerText();
+    await secondRow.focus();
+    await secondRow.press(' ');
+    await expect(secondListInput).toHaveValue(secondRowLabel);
+
+    await page.goto(`${trustedOrigin}/lists`);
+    const readOnlyRow = page.locator('table.dataTable tbody tr').first();
+    await expect(readOnlyRow).toBeVisible();
+    await expect(readOnlyRow).not.toHaveAttribute('tabindex', '0');
+    await expect(readOnlyRow).not.toHaveCSS('cursor', 'pointer');
 });
 
 test('database-backed Mosaico editor initializes inside the sandbox origin', async ({page}) => {
