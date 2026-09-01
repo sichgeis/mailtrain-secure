@@ -73,6 +73,36 @@ class Table extends Component {
         }
     }
 
+    activateRow(rowKey, data) {
+        const selectionMap = this.selectionMap;
+
+        if (this.props.selectMode === TableSelectMode.SINGLE) {
+            if (selectionMap.size !== 1 || !selectionMap.has(rowKey)) {
+                // noinspection JSIgnoredPromiseFromCall
+                this.notifySelection(this.props.onSelectionChangedAsync, new Map([[rowKey, data]]));
+            }
+
+        } else if (this.props.selectMode === TableSelectMode.MULTI) {
+            const newSelMap = new Map(selectionMap);
+
+            if (selectionMap.has(rowKey)) {
+                newSelMap.delete(rowKey);
+            } else {
+                newSelMap.set(rowKey, data);
+            }
+
+            // noinspection JSIgnoredPromiseFromCall
+            this.notifySelection(this.props.onSelectionChangedAsync, newSelMap);
+        }
+    }
+
+    updateRowSelectionState(row, rowKey) {
+        const selected = this.selectionMap.has(rowKey);
+        jQuery(row)
+            .toggleClass('selected', selected)
+            .attr('aria-selected', selected ? 'true' : 'false');
+    }
+
     getSelectionMap(props) {
         let selArray = [];
         if (props.selectMode === TableSelectMode.SINGLE && !this.props.selectionAsArray) {
@@ -303,36 +333,22 @@ class Table extends Component {
         }
 
         const self = this;
-        dtOptions.createdRow = function(row, data) {
-            const rowKey = data[self.props.selectionKeyIndex];
+        if (this.props.selectMode !== TableSelectMode.NONE) {
+            dtOptions.createdRow = function(row, data) {
+                const rowKey = data[self.props.selectionKeyIndex];
+                const jqRow = jQuery(row);
 
-            if (self.selectionMap.has(rowKey)) {
-                jQuery(row).addClass('selected');
-            }
-
-            jQuery(row).on('click', () => {
-                const selectionMap = self.selectionMap;
-
-                if (self.props.selectMode === TableSelectMode.SINGLE) {
-                    if (selectionMap.size !== 1 || !selectionMap.has(rowKey)) {
-                        // noinspection JSIgnoredPromiseFromCall
-                        self.notifySelection(self.props.onSelectionChangedAsync, new Map([[rowKey, data]]));
+                self.updateRowSelectionState(row, rowKey);
+                jqRow.attr('tabindex', '0');
+                jqRow.on('click', () => self.activateRow(rowKey, data));
+                jqRow.on('keydown', evt => {
+                    if (evt.key === 'Enter' || evt.key === ' ' || evt.key === 'Spacebar') {
+                        evt.preventDefault();
+                        self.activateRow(rowKey, data);
                     }
-
-                } else if (self.props.selectMode === TableSelectMode.MULTI) {
-                    const newSelMap = new Map(selectionMap);
-
-                    if (selectionMap.has(rowKey)) {
-                        newSelMap.delete(rowKey);
-                    } else {
-                        newSelMap.set(rowKey, data);
-                    }
-
-                    // noinspection JSIgnoredPromiseFromCall
-                    self.notifySelection(self.props.onSelectionChangedAsync, newSelMap);
-                }
-            });
-        };
+                });
+            };
+        }
 
         const t = this.props.t;
         dtOptions.language = {
@@ -398,15 +414,13 @@ class Table extends Component {
             this.refresh();
         }
 
-        const self = this;
-        this.table.rows().every(function() {
-            const key = this.data()[self.props.selectionKeyIndex];
-            if (self.selectionMap.has(key)) {
-                jQuery(this.node()).addClass('selected');
-            } else {
-                jQuery(this.node()).removeClass('selected');
-            }
-        });
+        if (this.props.selectMode !== TableSelectMode.NONE) {
+            const self = this;
+            this.table.rows().every(function() {
+                const key = this.data()[self.props.selectionKeyIndex];
+                self.updateRowSelectionState(this.node(), key);
+            });
+        }
 
         this.updateSelectInfo();
 
@@ -453,14 +467,22 @@ class Table extends Component {
         const props = this.props;
 
         let className = 'table table-striped table-bordered';
+        const selectable = this.props.selectMode !== TableSelectMode.NONE;
 
-        if (this.props.selectMode !== TableSelectMode.NONE) {
-            className += ' table-hover';
+        if (selectable) {
+            className += ` table-hover ${styles.selectableTable}`;
         }
 
         return (
             <div>
-                <table ref={(domElem) => { this.domTable = domElem; }} className={className} cellSpacing="0" width="100%" />
+                <table
+                    ref={(domElem) => { this.domTable = domElem; }}
+                    className={className}
+                    cellSpacing="0"
+                    width="100%"
+                    role={selectable ? 'grid' : undefined}
+                    aria-multiselectable={this.props.selectMode === TableSelectMode.MULTI ? 'true' : undefined}
+                />
             </div>
         );
     }
