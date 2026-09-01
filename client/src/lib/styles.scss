@@ -89,6 +89,18 @@
 
 .tableSelectDropdown input[readonly] {
   background-color: white;
+  cursor: pointer;
+}
+
+.selectableTable {
+  tbody tr {
+    cursor: pointer;
+  }
+
+  tbody tr:focus {
+    outline: 2px solid $input-focus-border-color;
+    outline-offset: -2px;
+  }
 }
 
 :global h3.legend {
@@ -287,4 +299,3 @@
     max-width: 900px;
   }
 }
-
