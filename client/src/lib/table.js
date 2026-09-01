@@ -18,6 +18,7 @@ import {withAsyncErrorHandler, withErrorHandling} from './error-handling';
 import styles from "./styles.scss";
 import {getUrl} from "./urls";
 import {withComponentMixins} from "./decorator-helpers";
+import {cloneTableColumns} from './table-columns';
 
 //dtFactory();
 //dtSelectFactory();
@@ -197,7 +198,10 @@ class Table extends Component {
     componentDidMount() {
         this.mounted = true;
 
-        const columns = this.props.columns.slice();
+        // Renderer installation mutates each definition below. TableSelect can
+        // share the same definitions across multiple tables, so every table
+        // must own its column objects or later mounts will wrap markup twice.
+        const columns = cloneTableColumns(this.props.columns);
 
         // XSS protection and actions rendering
         for (const column of columns) {
