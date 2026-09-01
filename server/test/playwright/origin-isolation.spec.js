@@ -225,6 +225,8 @@ test('a real Mosaico image response persists across cache reconciliation', async
     expect(regeneratedRow).toBeDefined();
     expect(regeneratedRow.id).not.toBe(row.id);
     expect(regeneratedRow.size).toBeGreaterThan(0);
+    expect(await knex('file_cache').where({id: row.id}).first()).toBeUndefined();
+    expect(await fs.stat(cachedFile).then(() => null, err => err.code)).toBe('ENOENT');
 
     const regeneratedFile = path.join(cacheDir, regeneratedRow.id.toString());
     expect((await fs.stat(regeneratedFile)).size).toBe(regeneratedRow.size);

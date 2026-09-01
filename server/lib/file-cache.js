@@ -8,6 +8,7 @@ const fs = require('fs-extra-promise');
 const stream = require('stream');
 const privilegeHelpers = require('./privilege-helpers');
 const synchronized = require('./synchronized');
+const {inspectCacheEntry, shouldPersistCacheWrite} = require('./file-cache-integrity');
 const {removeOrphanedCacheFiles} = require('./file-cache-reconciliation');
 const {formatCacheWriteFailure} = require('./file-cache-write-logging');
 const { tmpName } = require('tmp-promise');
@@ -96,9 +97,35 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
     await pruneCache();
     setInterval(pruneCache, cacheConfig.pruneInterval * 1000);
 
+    const invalidateCacheEntry = async (fileEntry, reason) => {
+        const cacheFilePath = getLocalFileName(fileEntry.id);
+        await knex('file_cache').where('id', fileEntry.id).where('type', typeId).del();
+
+        try {
+            await fs.unlinkAsync(cacheFilePath);
+        } catch (err) {
+            if (err.code !== 'ENOENT' && err.code !== 'EISDIR' && err.code !== 'EPERM') {
+                log.error('FileCache', formatCacheWriteFailure(typeId, err));
+            }
+        }
+
+        // If an unexpected directory could not be unlinked, let the bounded
+        // reconciliation pass report it without recursively removing it.
+        mayNeedPruning = true;
+        log.warn('FileCache', `Invalidated corrupt ${typeId} cache entry (${reason})`);
+    };
 
     const handleCache = async (key, res, next) => {
-        const fileEntry = await knex('file_cache').where('type', typeId).where('key', key).first();
+        let fileEntry = await knex('file_cache').where('type', typeId).where('key', key).first();
+
+        if (fileEntry) {
+            const cacheFilePath = getLocalFileName(fileEntry.id);
+            const inspection = await inspectCacheEntry(fileEntry, cacheFilePath);
+            if (!inspection.valid) {
+                await invalidateCacheEntry(fileEntry, inspection.reason);
+                fileEntry = null;
+            }
+        }
 
         if (fileEntry) {
             res.sendFile(
@@ -108,11 +135,14 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
                 },
                 err => {
                     if (err && err.code === 'ENOENT') {
-                        // If entry is missing and yet we got here, it means that we hit the interval file creation/unlink and DB update.
-                        // In this case, we just generate the file and don't cache it.
-                        res.fileCacheResponse = res;
-                        next();
-
+                        // The file disappeared after inspection. Invalidate the
+                        // exact row so a later request can cache the regeneration.
+                        invalidateCacheEntry(fileEntry, 'missing-after-inspection')
+                            .then(() => {
+                                res.fileCacheResponse = res;
+                                next();
+                            })
+                            .catch(next);
                     } else if (err) next(err);
                 }
             );
@@ -153,6 +183,25 @@ async function _fileCache(typeId, cacheConfig, keyGen) {
 
                 final(callback) {
                     res.end();
+
+                    // Failed or empty generators must never create a durable
+                    // cache entry that poisons later successful requests.
+                    if (!shouldPersistCacheWrite(fileSize)) {
+                        const finishEmptyWrite = cleanupErr => {
+                            if (cleanupErr && cleanupErr.code !== 'ENOENT') {
+                                log.error('FileCache', formatCacheWriteFailure(typeId, cleanupErr));
+                            }
+                            cacheWriteCompleted = true;
+                            callback();
+                        };
+
+                        if (fileStream) {
+                            fileStream.end(() => fs.unlink(tmpFilePath, finishEmptyWrite));
+                        } else {
+                            finishEmptyWrite();
+                        }
+                        return;
+                    }
 
                     ensureFileStream(() => {
                         fileStream.end(null, null, async () => {
