@@ -4,6 +4,7 @@
   "description": "Self hosted email newsletter app - client components",
   "main": "index.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "js": "node --stack_size=8192 ./node_modules/webpack/bin/webpack.js",
     "watch-js": "webpack --watch",
     "css": "npm-run-all --sequential css-compile css-minify",

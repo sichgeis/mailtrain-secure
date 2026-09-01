@@ -58,6 +58,9 @@ jobs:
       - name: Install client dependencies deterministically
         working-directory: client
         run: npm ci
+      - name: Run client unit tests
+        working-directory: client
+        run: npm test
       - name: Build browser assets
         working-directory: client
         run: npm run build
