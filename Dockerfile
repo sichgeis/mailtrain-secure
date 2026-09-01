@@ -31,6 +31,8 @@ RUN apk add --no-cache \
     bash=5.3.9-r1 \
     dumb-init=1.2.5-r4 \
     imagemagick=7.1.2.30-r0 \
+    imagemagick-jpeg=7.1.2.30-r0 \
+    imagemagick-webp=7.1.2.30-r0 \
     libcrypto3=3.5.8-r0 \
     libssl3=3.5.8-r0 \
     netcat-openbsd=1.234.1-r0 \
