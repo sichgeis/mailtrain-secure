@@ -101,6 +101,8 @@ test('ZoneMTA starts against Mongo and Redis and authenticates an SMTP client', 
         });
     });
 
+    assert.doesNotMatch(output, /Failed loading plugin|Cannot find module.*plugins\/core/i);
+
     const transport = nodemailer.createTransport({
         host: '127.0.0.1',
         port,

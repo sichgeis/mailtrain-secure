@@ -67,6 +67,7 @@ jobs:
           docker image inspect mailtrain-security-ci:${{ github.sha }} --format '{{.Id}}' > mailtrain-image-digest.txt
           test "$(docker image inspect mailtrain-security-ci:${{ github.sha }} --format '{{.Config.User}}')" = 'mailtrain:mailtrain'
           test "$(docker run --rm --entrypoint node mailtrain-security-ci:${{ github.sha }} -p 'process.getuid()+":"+process.getgid()')" = '10001:10001'
+          docker run --rm --entrypoint node mailtrain-security-ci:${{ github.sha }} -e "require('/app/zone-mta/lib/runtime-plugins').validateRuntimePlugins('/app/zone-mta')"
           docker run --rm --entrypoint magick mailtrain-security-ci:${{ github.sha }} -list format | grep -Eq '^ *JPEG\*? +JPEG +rw'
           docker run --rm --entrypoint magick mailtrain-security-ci:${{ github.sha }} -list format | grep -Eq '^ *WEBP\*? +WEBP +rw'
       - name: Audit server production dependencies
