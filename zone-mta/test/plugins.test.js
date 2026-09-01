@@ -90,6 +90,8 @@ test('maintained ZoneMTA loads the Mailtrain configuration', () => {
 
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /mailtrain-main/);
+    assert.match(result.stdout, /core\/delivery-loop/);
+    assert.match(result.stdout, /queueServer/);
     assert.match(result.stdout, /https:\/\/mailtrain\.example\.test\/webhooks\/zone-mta/);
 });
 
