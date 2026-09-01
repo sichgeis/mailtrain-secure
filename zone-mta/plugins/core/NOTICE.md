@@ -14,5 +14,5 @@ directory.
 The only source adaptation is changing `default-headers.js` internal relative
 imports to resolve the same `address-tools` and `sending-zone` modules from the
 pinned `@zone-eu/zone-mta` dependency. The source is licensed under
-EUPL-1.1-or-later; the dependency's license text is distributed at
+EUPL-1.2; the dependency's license text is distributed at
 `node_modules/@zone-eu/zone-mta/LICENSE`.

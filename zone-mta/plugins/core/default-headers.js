@@ -1,6 +1,6 @@
 'use strict';
 
-// SPDX-License-Identifier: EUPL-1.1-or-later
+// SPDX-License-Identifier: EUPL-1.2
 // Vendored from @zone-eu/zone-mta v3.10.18. See NOTICE.md in this directory.
 
 const os = require('os');
