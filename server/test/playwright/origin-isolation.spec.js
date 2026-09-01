@@ -110,9 +110,11 @@ test('regular campaign list selectors render table markup exactly once', async (
     ]);
 
     await page.goto(`${trustedOrigin}/campaigns/create-regular`);
-    await expect(page.locator('#form_lists_0_list')).toBeVisible();
-    await page.getByRole('button', {name: /add list/i}).click();
-    const secondListInput = page.locator('#form_lists_1_list');
+    const listsFieldset = page.getByRole('group', {name: 'Lists'});
+    await expect(listsFieldset.getByRole('textbox')).toHaveCount(1);
+    await listsFieldset.getByRole('button', {name: /add list/i}).click();
+    await expect(listsFieldset.getByRole('textbox')).toHaveCount(2);
+    const secondListInput = listsFieldset.getByRole('textbox').last();
     await expect(secondListInput).toBeVisible();
     await secondListInput.click();
 
