@@ -210,8 +210,33 @@ test('a real Mosaico image response persists across cache reconciliation', async
     expect(await knex('file_cache').where({id: row.id}).first()).toBeDefined();
     expect((await fs.stat(cachedFile)).size).toBeGreaterThan(0);
 
-    await knex('file_cache').where({id: row.id}).del();
-    await fs.unlink(cachedFile);
+    // Reproduce a cache entry poisoned while an image decoder was absent. A
+    // cache hit must invalidate the empty row/file and regenerate from the
+    // durable original instead of serving the empty response forever.
+    await fs.truncate(cachedFile, 0);
+    await knex('file_cache').where({id: row.id}).update({size: 0});
+
+    const regeneratedResponse = await request.get(`${trustedOrigin}/mosaico/img?src=${encodeURIComponent(sourceUrl)}&method=resize&params=${params}`);
+    expect(regeneratedResponse.status()).toBe(200);
+    expect((await regeneratedResponse.body()).length).toBeGreaterThan(0);
+
+    await new Promise(resolve => setTimeout(resolve, 7000));
+    const regeneratedRow = await knex('file_cache').where({type: cacheType, key: cacheKey}).first();
+    expect(regeneratedRow).toBeDefined();
+    expect(regeneratedRow.id).not.toBe(row.id);
+    expect(regeneratedRow.size).toBeGreaterThan(0);
+    expect(await knex('file_cache').where({id: row.id}).first()).toBeUndefined();
+    expect(await fs.stat(cachedFile).then(() => null, err => err.code)).toBe('ENOENT');
+
+    const regeneratedFile = path.join(cacheDir, regeneratedRow.id.toString());
+    expect((await fs.stat(regeneratedFile)).size).toBe(regeneratedRow.size);
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    expect(await knex('file_cache').where({id: regeneratedRow.id}).first()).toBeDefined();
+    expect((await fs.stat(regeneratedFile)).size).toBe(regeneratedRow.size);
+
+    await knex('file_cache').where({id: regeneratedRow.id}).del();
+    await fs.unlink(regeneratedFile);
     await knex('files_mosaico_template_file').where({entity: 1, filename: sourceFilename}).del();
     await fs.unlink(durableFile);
 });
