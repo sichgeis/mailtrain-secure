@@ -100,6 +100,31 @@ test('synthetic admin can log in through the trusted origin', async ({page}) => 
     expect(csrfCookie.sameSite).toBe('Lax');
 });
 
+test('regular campaign list selectors render table markup exactly once', async ({page}) => {
+    await page.goto(`${trustedOrigin}/login`);
+    await page.locator('#form_username').fill('admin');
+    await page.locator('#form_password').fill('test');
+    await Promise.all([
+        page.waitForURL(`${trustedOrigin}/`),
+        page.locator('button[type="submit"]').click()
+    ]);
+
+    await page.goto(`${trustedOrigin}/campaigns/create-regular`);
+    const listsFieldset = page.getByRole('group', {name: 'Lists'});
+    await expect(listsFieldset.getByRole('textbox')).toHaveCount(1);
+    await listsFieldset.getByRole('button', {name: /add list/i}).click();
+    await expect(listsFieldset.getByRole('textbox')).toHaveCount(2);
+    const secondListInput = listsFieldset.getByRole('textbox').last();
+    await expect(secondListInput).toBeVisible();
+    await secondListInput.click();
+
+    const selectorTable = secondListInput.locator('xpath=../following-sibling::div[1]');
+    await expect(selectorTable.locator('table')).toBeVisible();
+    await expect(selectorTable.locator('thead th').first()).toHaveText('Name');
+    await expect(selectorTable.locator('tbody td').first()).not.toContainText('<div>');
+    await expect(selectorTable.locator('tbody code').first()).toBeVisible();
+});
+
 test('database-backed Mosaico editor initializes inside the sandbox origin', async ({page}) => {
     const dialogs = [];
     page.on('dialog', async dialog => {
