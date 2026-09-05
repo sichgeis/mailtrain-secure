@@ -11,16 +11,16 @@ Baseline: `a79bf00e1a81bebf9b886d847efe0afb8a568152`. Synthetic data only; no de
 - Upload permissions are checked before multipart storage. Aborted streams and downstream failures clean only temporary upload files, never durable originals.
 - `security.imageTransforms` defaults: 2 active transformations, 20 queued jobs, 30-second deadlines, 8 MiB output ceiling, 120 misses/IP/minute. Identical in-flight transformations coalesce; disconnects cancel work when no clients remain. Cache hits bypass throttling. Existing public image URLs remain supported; dimensions are normalized before cache lookup.
 - Subscription and quick-report CSV downloads neutralize formula/control prefixes by default, including column headers. `?format=raw` is an explicitly labeled machine-import option, unsafe for spreadsheet use.
-- Patched TOML, qs, cookie and debug dependencies. Registry audits on 2026-09-05 report zero production advisories across server, client, shared and ZoneMTA. This is not a claim that legacy/dev-only directories or the entire application are vulnerability-free. Daily CI now repeats dependency and exact-built-image scanning; GitHub alert counts include unused/legacy and development lockfiles and must be triaged separately.
+- Patched TOML, qs, cookie and debug dependencies, compatible build-tool transitive updates, Mocha 12 and flatted 3.4.4. Registry audits on 2026-09-05 report zero production advisories across server, client, shared and ZoneMTA, and zero advisories in the current server/client development graphs. This is not a claim that archived lockfiles, vendored assets or the entire application are vulnerability-free. Daily CI repeats separately recorded production/development audits and exact-built-image scanning; GitHub alert counts from unused/legacy lockfiles must be triaged separately.
 
 ## Local evidence
 
-- Node 24.20.0 server fast/security tests and focused lint pass, including session, capability, CSV, upload cleanup and image-pool regressions.
+- Node 24.20.0 server fast/security tests: 113 pass, plus focused lint, including session, capability, CSV, upload cleanup, image-pool and updated-tooling regressions.
 - Synthetic MariaDB migration and RBAC integration pass, including password replacement, reset replay rejection, version increment and token revocation.
 - Browser template AND cloned-template campaign editors initialize with restricted capabilities. Forbidden sandbox account routes and uploads are denied. Logout invalidates the original capability; changing account version invalidates the browser session.
 - ImageMagick was installed locally to execute the real durable-image transformation/cache-repair regression; no production image or data was accessed.
 - Client build and unit tests pass. ZoneMTA unit/plugin tests: 9 pass; its datastore test requires the dedicated CI Mongo/Redis job.
-- Authoritative five-gate CI and final merged identity are still pending. Do not deploy this branch based only on this local evidence.
+- All eight local browser checks pass. Initial five-gate CI passed at `a361dff6a6cd4fe08268e09ccc20682debd8c98d`: [run 33982426761](https://github.com/sichgeis/mailtrain-secure/actions/runs/33982426761). A final rerun is required after the additional build/test dependency fixes. Do not deploy until the PR's exact head passes all five gates and merges.
 
 ## Deployment smoke checklist
 
