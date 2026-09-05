@@ -40,4 +40,8 @@ Additional checks confirmed safe CSV headers and that an actual administrator id
 
 ## Remaining limitations
 
+Production smoke identified a predefined-Mosaico compatibility gap after PR #86: `mosaicoWithFsTemplate` uses the same editor as `mosaico`, but the new factory required literal type equality. The follow-up adds an explicit editor/type allowlist, not a general fallback. Only database-backed `mosaico` gains a base-template permission; predefined variants retain only their authorized template/campaign permissions. No session, CSP, origin, filesystem or role checks are relaxed.
+
+The new browser regression reproduced the original authorized-token request returning 403 before the fix. Afterward, both variants pass actual template and campaign create, toolbar save and reload, plus wrong-editor denial, unrelated-upload denial, sandbox account-route denial and logout revocation. The fast suite passes 114 tests and focused lint passes. The follow-up PR's five CI gates remain the merge requirement; no deployment was performed by this source-code task.
+
 This is a targeted source/runtime hardening round, not a penetration-test certification. Live LDAP/CAS servers, mail delivery, deployed-image scanning and production smoke checks belong to the infrastructure acceptance run. Redis remains required for multi-process/shared session deployment. Restricted-token storage and transform pools are per application process; deployments with multiple replicas must account for aggregate capacity. Custom JavaScript reports remain disabled, not sandboxed.
