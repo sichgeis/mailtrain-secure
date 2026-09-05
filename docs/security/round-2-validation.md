@@ -20,7 +20,13 @@ Baseline: `a79bf00e1a81bebf9b886d847efe0afb8a568152`. Synthetic data only; no de
 - Browser template AND cloned-template campaign editors initialize with restricted capabilities. Forbidden sandbox account routes and uploads are denied. Logout invalidates the original capability; changing account version invalidates the browser session.
 - ImageMagick was installed locally to execute the real durable-image transformation/cache-repair regression; no production image or data was accessed.
 - Client build and unit tests pass. ZoneMTA unit/plugin tests: 9 pass; its datastore test requires the dedicated CI Mongo/Redis job.
-- All eight local browser checks pass. Initial five-gate CI passed at `a361dff6a6cd4fe08268e09ccc20682debd8c98d`: [run 33982426761](https://github.com/sichgeis/mailtrain-secure/actions/runs/33982426761). A final rerun is required after the additional build/test dependency fixes. Do not deploy until the PR's exact head passes all five gates and merges.
+- All eight local browser checks pass. Initial five-gate CI passed at `a361dff6a6cd4fe08268e09ccc20682debd8c98d`: [run 33982426761](https://github.com/sichgeis/mailtrain-secure/actions/runs/33982426761). All five gates also passed after the build/test dependency fixes at `f75adf45696d322fdc44bf60bf5611af30291803`: [run 33982767818](https://github.com/sichgeis/mailtrain-secure/actions/runs/33982767818). PR #86's checks remain the authoritative gate for its exact final documentation-closeout head.
+
+## Final source review
+
+Reviewed the complete diff plus permission generation, editor consumers, session serialization, upload lifecycle, image subprocess disposal, migration grants and dependency caller compatibility. No unresolved merge-blocking finding remains. This is a same-agent adversarial review, not independent third-party certification.
+
+Additional checks confirmed safe CSV headers and that an actual administrator identity can manage a privileged synthetic target after normal startup permission rebuild; the standalone legacy SQL fixture initially had empty administrator permission rows until that rebuild. No authorization bypass was added to accommodate the fixture. LDAP/CAS display fields remain distinct from current database permissions. API-token issuance uses a version predicate to prevent issuance after a concurrent password revocation.
 
 ## Deployment smoke checklist
 

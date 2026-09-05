@@ -8,14 +8,14 @@ The user approved autonomous fixes, regular commits/pushes, reviewed green PR me
 
 | Stage | Status | Acceptance |
 | --- | --- | --- |
-| Capability and account boundaries | Completed locally | Fail-closed editor grants, trusted-only account routes, target-account privilege ceilings, forged-message rejection; unit and real DB/browser regression tests |
-| Session revocation | Completed locally | Fresh DB identities, absolute expiry, password/role revocation, session-bound capabilities, LDAP/CAS parity |
-| Upload and image resource bounds | Completed locally | Pre-upload authorization and cleanup; bounded/coalesced transforms, timeout and miss throttling without breaking cache hits |
-| Spreadsheet-safe CSV | Completed locally | Safe exports by default, explicit raw compatibility mode |
-| Dependency maintenance | Completed locally | Authorized registry audits: zero production advisories in four current runtimes; scheduled scans |
-| Final review and deployment handoff | In progress | Five required CI gates green, reviewed/pushed commits and exact merged SHA sent to infrastructure with smoke checklist |
+| Capability and account boundaries | Completed | Fail-closed editor grants, trusted-only account routes, target-account privilege ceilings, forged-message rejection; unit and real DB/browser regression tests |
+| Session revocation | Completed | Fresh DB identities, absolute expiry, password/role revocation, session-bound capabilities, LDAP/CAS parity |
+| Upload and image resource bounds | Completed | Pre-upload authorization and cleanup; bounded/coalesced transforms, timeout and miss throttling without breaking cache hits |
+| Spreadsheet-safe CSV | Completed | Safe exports by default, explicit raw compatibility mode |
+| Dependency maintenance | Completed | Zero advisories in four current runtimes and current server/client development graphs; scheduled scans |
+| Final code review and CI | Completed | All five CI gates passed at f75adf45696d322fdc44bf60bf5611af30291803; review and smoke-test handoff instructions recorded in PR #86 |
 
-Evidence and rollout compatibility: [round-2-validation.md](security/round-2-validation.md). Local acceptance passes; authoritative CI is still required. Next action: complete review, run all five CI gates, merge only a green reviewed head, then send the deployment task the exact merged SHA. No current blocker.
+Evidence and rollout compatibility: [round-2-validation.md](security/round-2-validation.md). [PR #86](https://github.com/sichgeis/mailtrain-secure/pull/86) records the authoritative merged identity and final check state. Code hardening is complete; this evidence-only closeout must also pass CI before merge. Next operational action belongs to “Continue from agent handoff”: deploy the exact merged v2 SHA using the existing backup/rollback runbook and execute the documented smoke checklist. No production deployment or external mail was performed here.
 
 ## Outcome
 
