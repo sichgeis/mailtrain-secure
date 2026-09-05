@@ -210,6 +210,7 @@ async function updateWithConsistencyCheck(context, user, isOwnAccount) {
         }
 
         if (!isOwnAccount) {
+            await shares.enforceAccountManagementTx(tx, context, existing);
             await shares.enforceEntityPermissionTx(tx, context, 'namespace', user.namespace, 'manageUsers');
             await shares.enforceEntityPermissionTx(tx, context, 'namespace', existing.namespace, 'manageUsers');
 
@@ -258,6 +259,7 @@ async function remove(context, userId) {
         }
 
         await shares.enforceEntityPermissionTx(tx, context, 'namespace', existing.namespace, 'manageUsers');
+        await shares.enforceAccountManagementTx(tx, context, existing);
 
         await tx('users').where('id', userId).del();
     });
