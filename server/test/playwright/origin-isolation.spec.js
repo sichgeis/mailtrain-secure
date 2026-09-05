@@ -98,6 +98,11 @@ test('synthetic admin can log in through the trusted origin', async ({page}) => 
     expect(csrfCookie).toBeDefined();
     expect(csrfCookie.httpOnly).toBe(true);
     expect(csrfCookie.sameSite).toBe('Lax');
+
+    // A password/role change increments this version; even a valid signed cookie
+    // must no longer authenticate on the next request.
+    await knex('users').where({id: 1}).increment('auth_version', 1);
+    expect((await page.request.get(`${trustedOrigin}/rest/account`)).status()).not.toBe(200);
 });
 
 test('selectable tables expose clear pointer, keyboard, and selection affordances', async ({page}) => {
@@ -246,6 +251,19 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
     await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
     expect(dialogs).not.toContain('Update your browser!');
+
+    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(200);
+    const logoutStatus = await page.evaluate(async () => {
+        // eslint-disable-next-line no-undef
+        const response = await globalThis.fetch('/rest/logout', {
+            method: 'POST',
+            // eslint-disable-next-line no-undef
+            headers: {'X-CSRF-TOKEN': globalThis.csrfToken}
+        });
+        return response.status;
+    });
+    expect(logoutStatus).toBe(200);
+    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).not.toBe(200);
 });
 
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {

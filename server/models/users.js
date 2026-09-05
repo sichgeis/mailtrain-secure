@@ -38,7 +38,7 @@ function hash(entity) {
 }
 
 async function _getByTx(tx, context, key, value, extraColumns = []) {
-    const columns = ['id', 'username', 'name', 'email', 'namespace', 'role', ...extraColumns];
+    const columns = ['id', 'username', 'name', 'email', 'namespace', 'role', 'auth_version', ...extraColumns];
 
     const user = await tx('users').select(columns).where(key, value).first();
 
@@ -199,7 +199,7 @@ async function updateWithConsistencyCheck(context, user, isOwnAccount) {
         enforce(context.user.id === user.id, 'Account identity mismatch');
     }
     await knex.transaction(async tx => {
-        const existing = await tx('users').where('id', user.id).first();
+        const existing = await tx('users').where('id', user.id).forUpdate().first();
         if (!existing) {
             shares.throwPermissionDenied();
         }
@@ -235,6 +235,15 @@ async function updateWithConsistencyCheck(context, user, isOwnAccount) {
             await namespaceHelpers.validateEntity(tx, user);
 
             await tx('users').where('id', user.id).update(filterObject(user, allowedKeysExternal));
+        }
+
+        if (user.password || (!isOwnAccount && (existing.namespace !== user.namespace || existing.role !== user.role))) {
+            const revoked = {auth_version: tx.raw('auth_version + 1')};
+            if (user.password) Object.assign(revoked, {
+                access_token: null, access_token_hash: null, access_token_key_id: null,
+                reset_token: null, reset_token_hash: null, reset_token_key_id: null, reset_expire: null
+            });
+            await tx('users').where('id', user.id).update(revoked);
         }
 
         // Removes the default shares based on the user role and rebuilds permissions.
@@ -457,6 +466,10 @@ async function resetPassword(username, resetToken, password) {
 
             await tx('users').where({username}).update({
                 password,
+                auth_version: tx.raw('auth_version + 1'),
+                access_token: null,
+                access_token_hash: null,
+                access_token_key_id: null,
                 reset_token: null,
                 reset_token_hash: null,
                 reset_token_key_id: null,
@@ -479,6 +492,8 @@ function registerRestrictedAccessTokenMethod(method, getHandlerFromParams) {
 
 async function getRestrictedAccessToken(context, method, params) {
     enforceUnrestrictedIdentity(context);
+    const {validIdentity} = require('../lib/session-identity');
+    if (!context.sessionId || !validIdentity(context.sessionIdentity, context.user)) shares.throwPermissionDenied();
     if (!Object.hasOwn(restrictedAccessTokenMethods, method) || !params || typeof params !== 'object' || Array.isArray(params)) {
         shares.throwPermissionDenied();
     }
@@ -496,6 +511,8 @@ async function getRestrictedAccessToken(context, method, params) {
     const tokenEntry = {
         token,
         userId: context.user.id,
+        sessionId: context.sessionId,
+        authVersion: context.user.auth_version,
         method,
         params,
         handler
@@ -508,17 +525,25 @@ async function getRestrictedAccessToken(context, method, params) {
 
 async function refreshRestrictedAccessToken(context, token) {
     enforceUnrestrictedIdentity(context);
+    const entry = restrictedAccessTokens.get(token);
+    if (!entry || !context.sessionId || entry.sessionId !== context.sessionId || entry.authVersion !== context.user.auth_version) {
+        shares.throwPermissionDenied();
+    }
     if (!restrictedAccessTokens.refresh(token, context.user.id)) {
         shares.throwPermissionDenied();
     }
 }
 
-async function getByRestrictedAccessToken(token) {
+async function getByRestrictedAccessToken(token, sessionStore) {
     const tokenEntry = restrictedAccessTokens.get(token);
 
     if (tokenEntry) {
         validateCapability(tokenEntry.handler);
         const user = await getById(contextHelpers.getAdminContext(), tokenEntry.userId);
+        if (!sessionStore || tokenEntry.authVersion !== user.auth_version) shares.throwPermissionDenied();
+        const session = await new Promise((resolve, reject) => sessionStore.get(tokenEntry.sessionId, (err, value) => err ? reject(err) : resolve(value)));
+        const {validIdentity} = require('../lib/session-identity');
+        if (!session || !session.passport || !validIdentity(session.passport.user, user)) shares.throwPermissionDenied();
         user.restrictedAccessMethod = tokenEntry.method;
         user.restrictedAccessHandler = tokenEntry.handler;
         user.restrictedAccessToken = tokenEntry.token;

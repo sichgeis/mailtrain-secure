@@ -4,7 +4,9 @@ const knex = require('./knex');
 
 function getRequestContext(req) {
     const context = {
-        user: req.user
+        user: req.user,
+        sessionId: req.sessionID,
+        sessionIdentity: req.session && req.session.passport && req.session.passport.user
     };
 
     return context;

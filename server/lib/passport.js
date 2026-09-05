@@ -17,6 +17,7 @@ const contextHelpers = require('./context-helpers');
 const {extractAccessToken} = require('./auth-security');
 const {loadExternalAuthAdapter} = require('./external-auth-adapter');
 const {getCasLogoutUrl, normalizeCasProfile} = require('./cas-auth');
+const {createIdentity, validIdentity} = require('./session-identity');
 
 let authMode = 'local';
 
@@ -149,7 +150,7 @@ module.exports.tryAuthByRestrictedAccessToken = (req, res, next) => {
 
     req.url = url;
 
-    users.getByRestrictedAccessToken(restrictedAccessToken).then(user => {
+    users.getByRestrictedAccessToken(restrictedAccessToken, req.sessionStore).then(user => {
         req.user = user;
         next();
     }).catch(err => {
@@ -281,7 +282,7 @@ if (CasStrategy) {
                 id: userId,
                 username: username,
                 name: profile.displayName,
-                email: profile.emails[0].value,
+                email: profile.email,
                 role: config.cas.newUserRole
             };
         } else {
@@ -290,8 +291,6 @@ if (CasStrategy) {
       }
     }));
     passport.use(cas);
-    passport.serializeUser((user, done) => done(null, user));
-    passport.deserializeUser((user, done) => done(null, user));
 
     module.exports.authenticateCas = passport.authenticate('cas', { failureRedirect: '/login?cas-login-error' });
     module.exports.logoutCas = function (req, res, next) {
@@ -347,8 +346,6 @@ if (CasStrategy) {
         }
     })));
 
-    passport.serializeUser((user, done) => done(null, user));
-    passport.deserializeUser((user, done) => done(null, user));
 
 } else {
     log.info('Using local auth');
@@ -359,6 +356,24 @@ if (CasStrategy) {
         return await users.getByUsernameIfPasswordMatch(contextHelpers.getAdminContext(), username, password);
     })));
 
-    passport.serializeUser((user, done) => done(null, user.id));
-    passport.deserializeUser((id, done) => nodeifyPromise(users.getById(contextHelpers.getAdminContext(), id), done));
 }
+
+// Every authentication adapter stores only a versioned identity, never a stale role/profile.
+passport.serializeUser((req, user, done) => {
+    nodeifyPromise(users.getById(contextHelpers.getAdminContext(), user.id).then(current => {
+        if (user.auth_version !== undefined && user.auth_version !== current.auth_version) {
+            throw new interoperableErrors.PermissionDeniedError();
+        }
+        return createIdentity(current, !!(req.body && req.body.remember));
+    }), done);
+});
+
+passport.deserializeUser((identity, done) => {
+    if (!identity || !Number.isSafeInteger(identity.id)) return done(null, false);
+    users.getById(contextHelpers.getAdminContext(), identity.id).then(user => {
+        done(null, validIdentity(identity, user) ? user : false);
+    }).catch(err => {
+        if (err instanceof interoperableErrors.PermissionDeniedError) return done(null, false);
+        done(err);
+    });
+});
