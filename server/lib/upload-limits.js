@@ -35,6 +35,8 @@ function createAggregateDiskStorage({destination, maxTotalBytes}) {
             file.path = filenamePath;
             file.mailtrainCleanupRequested = false;
             const output = fs.createWriteStream(filenamePath, {flags: 'wx', mode: 0o600});
+            const abort = () => file.stream.destroy(Object.assign(new Error('Upload aborted'), {code: 'EUPLOADABORTED'}));
+            req.once('aborted', abort);
             let fileSize = 0;
             const limiter = new Transform({
                 transform(chunk, encoding, done) {
@@ -52,6 +54,7 @@ function createAggregateDiskStorage({destination, maxTotalBytes}) {
                 }
             });
             pipeline(file.stream, limiter, output, err => {
+                req.removeListener('aborted', abort);
                 if (err || file.mailtrainCleanupRequested) {
                     const completionError = err || Object.assign(new Error('Upload was aborted during storage'), {code: 'EUPLOADABORTED'});
                     fs.unlink(filenamePath, unlinkError => {

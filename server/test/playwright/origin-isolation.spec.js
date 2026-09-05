@@ -263,7 +263,7 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
         return response.status;
     });
     expect(logoutStatus).toBe(200);
-    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).not.toBe(200);
+    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`, {maxRedirects: 0})).status()).toBe(302);
 });
 
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {

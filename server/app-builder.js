@@ -11,6 +11,7 @@ const favicon = require('serve-favicon');
 const logger = require('morgan');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
+const memorySessionStore = new session.MemoryStore();
 const flash = require('connect-flash');
 const hbs = require('hbs');
 const compression = require('compression');
@@ -236,6 +237,7 @@ async function createApp(appType) {
         })));
     } else {
         app.use(session(buildSessionOptions({
+            store: memorySessionStore,
             secret: config.www.secret,
             secure: config.security.sessions.secure,
             maxAgeMs: config.security.sessions.maxAgeMs,
