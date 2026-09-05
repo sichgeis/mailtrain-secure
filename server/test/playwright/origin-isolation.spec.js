@@ -199,6 +199,34 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     expect(createdTemplate.status).toBe(200);
     expect(createdTemplate.id).toBeGreaterThan(0);
 
+    const capability = await page.evaluate(async id => {
+        const post = async params => {
+            // eslint-disable-next-line no-undef
+            const response = await globalThis.fetch('/rest/restricted-access-token', {
+                method: 'POST',
+                // eslint-disable-next-line no-undef
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
+                body: JSON.stringify({method: 'mosaico', params})
+            });
+            return {status: response.status, body: await response.json()};
+        };
+        return {
+            invalid: await post({entityTypeId: 'unsupported', entityId: id}),
+            valid: await post({entityTypeId: 'template', entityId: id})
+        };
+    }, createdTemplate.id);
+    expect(capability.invalid.status).toBe(403);
+    expect(capability.valid.status).toBe(200);
+    const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
+    for (const endpoint of ['account', 'access-token']) {
+        const response = await page.request.get(`${capabilityBase}/rest/${endpoint}`);
+        expect(response.status()).toBe(404);
+    }
+    for (const endpoint of ['access-token-reset', 'restricted-access-token']) {
+        const response = await page.request.post(`${capabilityBase}/rest/${endpoint}`, {data: {}});
+        expect(response.status()).toBe(404);
+    }
+
     const editorResponsePromise = page.waitForResponse(response => {
         const url = new URL(response.url());
         return url.origin === sandboxOrigin && url.pathname === '/anonymous/mosaico/editor';
