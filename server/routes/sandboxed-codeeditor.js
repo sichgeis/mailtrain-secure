@@ -16,21 +16,8 @@ const { getTrustedUrl, getSandboxUrl, getPublicUrl } = require('../lib/urls');
 const { AppType } = require('../../shared/app');
 
 
-users.registerRestrictedAccessTokenMethod('codeeditor', async ({entityTypeId, entityId}) => {
-    if (entityTypeId === 'template') {
-        const tmpl = await templates.getById(contextHelpers.getAdminContext(), entityId, false);
-
-        if (tmpl.type === 'codeeditor') {
-            return {
-                permissions: {
-                    'template': {
-                        [entityId]: new Set(['manageFiles', 'view'])
-                    }
-                }
-            };
-        }
-    }
-});
+const {editorCapability} = require('../lib/editor-capability');
+users.registerRestrictedAccessTokenMethod('codeeditor', (params, context) => editorCapability('codeeditor', params, context));
 
 
 async function getRouter(appType) {

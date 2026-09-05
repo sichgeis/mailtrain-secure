@@ -40,24 +40,8 @@ const {anonymousRestrictedAccessToken} = require('../../shared/urls');
 const legacyMosaicoUploadsDir = path.resolve(__dirname, '..', '..', 'client', 'static', 'mosaico', 'uploads');
 
 
-users.registerRestrictedAccessTokenMethod('mosaico', async ({entityTypeId, entityId}) => {
-    if (entityTypeId === 'template') {
-        const tmpl = await templates.getById(contextHelpers.getAdminContext(), entityId, false);
-
-        if (tmpl.type === 'mosaico') {
-            return {
-                permissions: {
-                    'template': {
-                        [entityId]: new Set(['viewFiles', 'manageFiles', 'view'])
-                    },
-                    'mosaicoTemplate': {
-                        [tmpl.data.mosaicoTemplate]: new Set(['view'])
-                    }
-                }
-            };
-        }
-    }
-});
+const {editorCapability} = require('../lib/editor-capability');
+users.registerRestrictedAccessTokenMethod('mosaico', (params, context) => editorCapability('mosaico', params, context));
 
 
 async function placeholderImage(width, height, labelText, labelColor) {

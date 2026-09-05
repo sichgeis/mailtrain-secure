@@ -580,6 +580,9 @@ function checkGlobalPermission(context, requiredOperations) {
     if (!context.user) {
         return false;
     }
+    if (context.user.restrictedAccessToken && !context.user.restrictedAccessHandler) {
+        return false;
+    }
 
     if (typeof requiredOperations === 'string') {
         requiredOperations = [ requiredOperations ];
@@ -735,6 +738,9 @@ function getGlobalPermissions(context) {
     if (!context.user) {
         return [];
     }
+    if (context.user.restrictedAccessToken && !context.user.restrictedAccessHandler) {
+        return [];
+    }
 
     enforce(!context.user.admin, 'getPermissions is not supposed to be called by assumed admin');
 
@@ -768,6 +774,9 @@ async function getPermissionsTx(tx, context, entityTypeId, entityId) {
 
 // If entityId is null, it means that we require that restrictedAccessHandler does not differentiate based on entityId. This is used in ajaxListWithPermissionsTx.
 function filterPermissionsByRestrictedAccessHandler(context, entityTypeId, entityId, permissions, operationMsg) {
+    if (context.user.restrictedAccessToken && !context.user.restrictedAccessHandler) {
+        return [];
+    }
     if (context.user.restrictedAccessHandler) {
         const originalOperations = permissions;
         if (context.user.restrictedAccessHandler.permissions) {

@@ -291,7 +291,7 @@ async function createApp(appType) {
         app.use(passport.tryAuthByRestrictedAccessToken);
     }
 
-    if (appType === AppType.TRUSTED || appType === AppType.SANDBOXED) {
+    if (appType === AppType.TRUSTED) {
         // Endpoint under /api are authenticated by access token
         app.all('/api/*', passport.authByAccessToken);
     }
@@ -344,7 +344,11 @@ async function createApp(appType) {
     useWith404Fallback('/grapesjs', await sandboxedGrapesJS.getRouter(appType));
     useWith404Fallback('/codeeditor', await sandboxedCodeEditor.getRouter(appType));
 
-    if (appType === AppType.TRUSTED || appType === AppType.SANDBOXED) {
+    if (appType === AppType.SANDBOXED) {
+        useWith404Fallback('/rest', filesRest);
+    }
+
+    if (appType === AppType.TRUSTED) {
         useWith404Fallback('/subscriptions', subscriptions);
         if (appType === AppType.TRUSTED) {
             useWith404Fallback('/webhooks', webhooks);
@@ -363,7 +367,9 @@ async function createApp(appType) {
         app.use('/rest', namespacesRest);
         app.use('/rest', sendConfigurationsRest);
         app.use('/rest', usersRest);
-        app.use('/rest', accountRest);
+        if (appType === AppType.TRUSTED) {
+            app.use('/rest', accountRest);
+        }
         app.use('/rest', channelsRest);
         app.use('/rest', campaignsRest);
         app.use('/rest', triggersRest);

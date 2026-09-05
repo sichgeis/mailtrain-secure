@@ -16,21 +16,8 @@ const { getTrustedUrl, getSandboxUrl, getPublicUrl } = require('../lib/urls');
 const { AppType } = require('../../shared/app');
 
 
-users.registerRestrictedAccessTokenMethod('grapesjs', async ({entityTypeId, entityId}) => {
-    if (entityTypeId === 'template') {
-        const tmpl = await templates.getById(contextHelpers.getAdminContext(), entityId, false);
-
-        if (tmpl.type === 'grapesjs') {
-            return {
-                permissions: {
-                    'template': {
-                        [entityId]: new Set(['viewFiles', 'manageFiles', 'view'])
-                    }
-                }
-            };
-        }
-    }
-});
+const {editorCapability} = require('../lib/editor-capability');
+users.registerRestrictedAccessTokenMethod('grapesjs', (params, context) => editorCapability('grapesjs', params, context));
 
 
 async function getRouter(appType) {

@@ -219,10 +219,12 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     expect(capability.valid.status).toBe(200);
     const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
     for (const endpoint of ['account', 'access-token']) {
+        // eslint-disable-next-line no-await-in-loop
         const response = await page.request.get(`${capabilityBase}/rest/${endpoint}`);
         expect(response.status()).toBe(404);
     }
     for (const endpoint of ['access-token-reset', 'restricted-access-token']) {
+        // eslint-disable-next-line no-await-in-loop
         const response = await page.request.post(`${capabilityBase}/rest/${endpoint}`, {data: {}});
         expect(response.status()).toBe(404);
     }
