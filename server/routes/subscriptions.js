@@ -9,8 +9,10 @@ const fields = require('../models/fields');
 const lists = require('../models/lists');
 const moment = require('moment');
 const {SubscriptionStatus} = require('../../shared/lists');
+const {csvOptions} = require('../lib/csv-safety');
 
 router.getAsync('/export/:listId/:segmentId', passport.loggedIn, async (req, res) => {
+    const safety = csvOptions(req.query.format);
     const statusStrings = {
         [SubscriptionStatus.SUBSCRIBED]: 'subscribed',
         [SubscriptionStatus.UNSUBSCRIBED]: 'unsubscribed',
@@ -49,6 +51,7 @@ router.getAsync('/export/:listId/:segmentId', passport.loggedIn, async (req, res
     res.set(headers);
 
     const stringifier = stringify({
+        ...safety,
         columns,
         header: true,
         delimiter: ','
