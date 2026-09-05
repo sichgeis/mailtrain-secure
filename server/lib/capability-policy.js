@@ -2,6 +2,17 @@
 
 const {PermissionDeniedError} = require('../../shared/interoperable-errors');
 
+const editorContentTypes = {
+    mosaico: ['mosaico', 'mosaicoWithFsTemplate'],
+    grapesjs: ['grapesjs'],
+    ckeditor4: ['ckeditor4'],
+    codeeditor: ['codeeditor']
+};
+
+function isEditorContentType(editorType, contentType) {
+    return Object.hasOwn(editorContentTypes, editorType) && editorContentTypes[editorType].includes(contentType);
+}
+
 function enforceUnrestrictedIdentity(context) {
     const user = context && context.user;
     if (!user || user.restrictedAccessToken || user.restrictedAccessMethod || user.restrictedAccessHandler) {
@@ -30,4 +41,4 @@ function validateCapability(handler) {
     }
 }
 
-module.exports = {enforceUnrestrictedIdentity, validateCapability};
+module.exports = {enforceUnrestrictedIdentity, validateCapability, isEditorContentType};

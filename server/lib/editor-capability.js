@@ -1,6 +1,7 @@
 'use strict';
 
 const {PermissionDeniedError} = require('../../shared/interoperable-errors');
+const {isEditorContentType} = require('./capability-policy');
 
 async function editorCapability(editorType, {entityTypeId, entityId}, context) {
     if (!['template', 'campaign'].includes(entityTypeId) || !Number.isSafeInteger(entityId) || entityId < 1) {
@@ -13,7 +14,7 @@ async function editorCapability(editorType, {entityTypeId, entityId}, context) {
     const shares = require('../models/shares');
     const entity = await model.getById(context, entityId, false);
     const content = entityTypeId === 'template' ? entity : entity.data.sourceCustom;
-    if (!content || content.type !== editorType) {
+    if (!content || !isEditorContentType(editorType, content.type)) {
         throw new PermissionDeniedError();
     }
     const operations = new Set(['view']);
@@ -25,7 +26,7 @@ async function editorCapability(editorType, {entityTypeId, entityId}, context) {
     }
     const permissions = {[entityTypeId]: {[entityId]: operations}};
     const baseTemplate = content.data && content.data.mosaicoTemplate;
-    if (editorType === 'mosaico' && baseTemplate) {
+    if (content.type === 'mosaico' && baseTemplate) {
         await shares.enforceEntityPermission(context, 'mosaicoTemplate', baseTemplate, 'view');
         permissions.mosaicoTemplate = {[baseTemplate]: new Set(['view'])};
     }

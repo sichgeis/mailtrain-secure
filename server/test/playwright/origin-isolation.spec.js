@@ -156,140 +156,163 @@ test('selectable tables expose clear pointer, keyboard, and selection affordance
     await expect(readOnlyRow).not.toHaveCSS('cursor', 'pointer');
 });
 
-test('database-backed Mosaico editor initializes inside the sandbox origin', async ({page}) => {
-    const dialogs = [];
-    page.on('dialog', async dialog => {
-        dialogs.push(dialog.message());
-        if (dialog.type() === 'beforeunload') {
-            await dialog.accept();
-        } else {
-            await dialog.dismiss();
-        }
-    });
-
-    await page.goto(`${trustedOrigin}/login`);
-    await page.locator('#form_username').fill('admin');
-    await page.locator('#form_password').fill('test');
-    await Promise.all([
-        page.waitForURL(`${trustedOrigin}/`),
-        page.locator('button[type="submit"]').click()
-    ]);
-
-    const createdTemplate = await page.evaluate(async () => {
-        // eslint-disable-next-line no-undef
-        const response = await globalThis.fetch('/rest/templates', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Content-Type': 'application/json',
-                // eslint-disable-next-line no-undef
-                'X-CSRF-TOKEN': globalThis.csrfToken
-            },
-            body: JSON.stringify({
-                name: 'Playwright Mosaico initialization fixture',
-                description: 'Synthetic CI data',
-                type: 'mosaico',
-                tag_language: 'simple',
-                namespace: 1,
-                data: {
-                    mosaicoTemplate: 1
-                },
-                html: '',
-                text: ''
-            })
+for (const variant of [
+    {type: 'mosaico', data: {mosaicoTemplate: 1}},
+    {type: 'mosaicoWithFsTemplate', data: {mosaicoFsTemplate: 'versafix-1'}}
+]) {
+    test(`${variant.type} template and campaign initialize inside the sandbox origin`, async ({page}) => {
+        const dialogs = [];
+        page.on('dialog', async dialog => {
+            dialogs.push(dialog.message());
+            if (dialog.type() === 'beforeunload') {
+                await dialog.accept();
+            } else {
+                await dialog.dismiss();
+            }
         });
 
-        return {
-            status: response.status,
-            id: await response.json()
-        };
-    });
+        await page.goto(`${trustedOrigin}/login`);
+        await page.locator('#form_username').fill('admin');
+        await page.locator('#form_password').fill('test');
+        await Promise.all([
+            page.waitForURL(`${trustedOrigin}/`),
+            page.locator('button[type="submit"]').click()
+        ]);
 
-    expect(createdTemplate.status).toBe(200);
-    expect(createdTemplate.id).toBeGreaterThan(0);
+        const createdTemplate = await page.evaluate(async variant => {
+        // eslint-disable-next-line no-undef
+            const response = await globalThis.fetch('/rest/templates', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // eslint-disable-next-line no-undef
+                    'X-CSRF-TOKEN': globalThis.csrfToken
+                },
+                body: JSON.stringify({
+                    name: 'Playwright Mosaico initialization fixture',
+                    description: 'Synthetic CI data',
+                    type: variant.type,
+                    tag_language: 'simple',
+                    namespace: 1,
+                    data: variant.data,
+                    html: '',
+                    text: ''
+                })
+            });
 
-    const capability = await page.evaluate(async id => {
-        const post = async params => {
+            return {
+                status: response.status,
+                id: await response.json()
+            };
+        }, variant);
+
+        expect(createdTemplate.status).toBe(200);
+        expect(createdTemplate.id).toBeGreaterThan(0);
+
+        const capability = await page.evaluate(async id => {
+            const post = async (params, method = 'mosaico') => {
             // eslint-disable-next-line no-undef
-            const response = await globalThis.fetch('/rest/restricted-access-token', {
+                const response = await globalThis.fetch('/rest/restricted-access-token', {
+                    method: 'POST',
+                    // eslint-disable-next-line no-undef
+                    headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
+                    body: JSON.stringify({method, params})
+                });
+                return {status: response.status, body: await response.json()};
+            };
+            return {
+                invalid: await post({entityTypeId: 'unsupported', entityId: id}),
+                wrongEditor: await post({entityTypeId: 'template', entityId: id}, 'codeeditor'),
+                valid: await post({entityTypeId: 'template', entityId: id})
+            };
+        }, createdTemplate.id);
+        expect(capability.invalid.status).toBe(403);
+        expect(capability.wrongEditor.status).toBe(403);
+        expect(capability.valid.status).toBe(200);
+        const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
+        const deniedUpload = await page.request.post(`${capabilityBase}/mosaico/upload/template/999999999`, {
+            multipart: {'files[]': {name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('synthetic rejected upload')}}
+        });
+        expect(deniedUpload.status()).toBe(403);
+        for (const endpoint of ['account', 'access-token']) {
+        // eslint-disable-next-line no-await-in-loop
+            const response = await page.request.get(`${capabilityBase}/rest/${endpoint}`);
+            expect(response.status()).toBe(404);
+        }
+        for (const endpoint of ['access-token-reset', 'restricted-access-token']) {
+        // eslint-disable-next-line no-await-in-loop
+            const response = await page.request.post(`${capabilityBase}/rest/${endpoint}`, {data: {}});
+            expect(response.status()).toBe(404);
+        }
+
+        const editorResponsePromise = page.waitForResponse(response => {
+            const url = new URL(response.url());
+            return url.origin === sandboxOrigin && url.pathname === '/anonymous/mosaico/editor';
+        });
+        await page.goto(`${trustedOrigin}/templates/${createdTemplate.id}/edit`);
+
+        const editorResponse = await editorResponsePromise;
+        const editorCsp = editorResponse.headers()['content-security-policy'];
+        expect(editorCsp).toContain('script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'');
+        expect(editorCsp).toContain('sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts');
+        expect(editorCsp).toContain(`frame-ancestors ${trustedOrigin}`);
+
+        const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
+        await expect(editor.locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
+        await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
+        await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
+        expect(dialogs).not.toContain('Update your browser!');
+
+        const [templateSaved] = await Promise.all([
+            page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/rest/templates/${createdTemplate.id}`),
+            page.locator('a[title="Save"]').click()
+        ]);
+        expect(templateSaved.status()).toBe(200);
+        await page.reload();
+        await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible();
+
+        // Campaign editing must get explicit scoped capabilities, not rely on an
+        // unsupported factory returning an unrestricted identity.
+        const campaign = await page.evaluate(async templateId => {
+        // eslint-disable-next-line no-undef
+            const response = await globalThis.fetch('/rest/campaigns', {
                 method: 'POST',
                 // eslint-disable-next-line no-undef
                 headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
-                body: JSON.stringify({method: 'mosaico', params})
+                body: JSON.stringify({name: 'Synthetic editor campaign', namespace: 1, type: 1, source: 3,
+                    send_configuration: 1, lists: [{list: 1}], data: {sourceTemplate: templateId}})
             });
-            return {status: response.status, body: await response.json()};
-        };
-        return {
-            invalid: await post({entityTypeId: 'unsupported', entityId: id}),
-            valid: await post({entityTypeId: 'template', entityId: id})
-        };
-    }, createdTemplate.id);
-    expect(capability.invalid.status).toBe(403);
-    expect(capability.valid.status).toBe(200);
-    const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
-    const deniedUpload = await page.request.post(`${capabilityBase}/mosaico/upload/template/999999999`, {
-        multipart: {'files[]': {name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('synthetic rejected upload')}}
-    });
-    expect(deniedUpload.status()).toBe(403);
-    for (const endpoint of ['account', 'access-token']) {
-        // eslint-disable-next-line no-await-in-loop
-        const response = await page.request.get(`${capabilityBase}/rest/${endpoint}`);
-        expect(response.status()).toBe(404);
-    }
-    for (const endpoint of ['access-token-reset', 'restricted-access-token']) {
-        // eslint-disable-next-line no-await-in-loop
-        const response = await page.request.post(`${capabilityBase}/rest/${endpoint}`, {data: {}});
-        expect(response.status()).toBe(404);
-    }
+            return {status: response.status, id: await response.json()};
+        }, createdTemplate.id);
+        expect(campaign.status, JSON.stringify(campaign.id)).toBe(200);
+        await page.goto(`${trustedOrigin}/campaigns/${campaign.id}/content`);
+        await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
 
-    const editorResponsePromise = page.waitForResponse(response => {
-        const url = new URL(response.url());
-        return url.origin === sandboxOrigin && url.pathname === '/anonymous/mosaico/editor';
-    });
-    await page.goto(`${trustedOrigin}/templates/${createdTemplate.id}/edit`);
+        const [campaignSaved] = await Promise.all([
+            page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/rest/campaigns-content/${campaign.id}`),
+            page.locator('a[title="Save"]').click()
+        ]);
+        expect(campaignSaved.status()).toBe(200);
+        await page.reload();
+        await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible();
 
-    const editorResponse = await editorResponsePromise;
-    const editorCsp = editorResponse.headers()['content-security-policy'];
-    expect(editorCsp).toContain('script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'');
-    expect(editorCsp).toContain('sandbox allow-forms allow-modals allow-popups allow-same-origin allow-scripts');
-    expect(editorCsp).toContain(`frame-ancestors ${trustedOrigin}`);
-
-    const editor = page.frameLocator('iframe[src*="mosaico/editor"]');
-    await expect(editor.locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
-    await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
-    await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
-    expect(dialogs).not.toContain('Update your browser!');
-
-    // Campaign editing must get explicit scoped capabilities, not rely on an
-    // unsupported factory returning an unrestricted identity.
-    const campaign = await page.evaluate(async templateId => {
+        const scopedResource = `${capabilityBase}/mosaico/upload/template/${createdTemplate.id}`;
+        expect((await page.request.get(scopedResource)).status()).toBe(200);
+        expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(variant.type === 'mosaico' ? 200 : 403);
+        const logoutStatus = await page.evaluate(async () => {
         // eslint-disable-next-line no-undef
-        const response = await globalThis.fetch('/rest/campaigns', {
-            method: 'POST',
-            // eslint-disable-next-line no-undef
-            headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
-            body: JSON.stringify({name: 'Synthetic editor campaign', namespace: 1, type: 1, source: 3,
-                send_configuration: 1, lists: [{list: 1}], data: {sourceTemplate: templateId}})
+            const response = await globalThis.fetch('/rest/logout', {
+                method: 'POST',
+                // eslint-disable-next-line no-undef
+                headers: {'X-CSRF-TOKEN': globalThis.csrfToken}
+            });
+            return response.status;
         });
-        return {status: response.status, id: await response.json()};
-    }, createdTemplate.id);
-    expect(campaign.status, JSON.stringify(campaign.id)).toBe(200);
-    await page.goto(`${trustedOrigin}/campaigns/${campaign.id}/content`);
-    await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
-
-    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(200);
-    const logoutStatus = await page.evaluate(async () => {
-        // eslint-disable-next-line no-undef
-        const response = await globalThis.fetch('/rest/logout', {
-            method: 'POST',
-            // eslint-disable-next-line no-undef
-            headers: {'X-CSRF-TOKEN': globalThis.csrfToken}
-        });
-        return response.status;
+        expect(logoutStatus).toBe(200);
+        expect((await page.request.get(scopedResource, {maxRedirects: 0})).status()).toBe(302);
     });
-    expect(logoutStatus).toBe(200);
-    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`, {maxRedirects: 0})).status()).toBe(302);
-});
+}
 
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {
     test.setTimeout(60000); // Two intentional five-second cache writes plus reconciliation waits.
