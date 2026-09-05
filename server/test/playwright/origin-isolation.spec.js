@@ -156,7 +156,11 @@ test('selectable tables expose clear pointer, keyboard, and selection affordance
     await expect(readOnlyRow).not.toHaveCSS('cursor', 'pointer');
 });
 
-test('database-backed Mosaico editor initializes inside the sandbox origin', async ({page}) => {
+for (const variant of [
+    {type: 'mosaico', data: {mosaicoTemplate: 1}},
+    {type: 'mosaicoWithFsTemplate', data: {mosaicoFsTemplate: 'versafix-1'}}
+]) {
+test(`${variant.type} template and campaign initialize inside the sandbox origin`, async ({page}) => {
     const dialogs = [];
     page.on('dialog', async dialog => {
         dialogs.push(dialog.message());
@@ -175,7 +179,7 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
         page.locator('button[type="submit"]').click()
     ]);
 
-    const createdTemplate = await page.evaluate(async () => {
+    const createdTemplate = await page.evaluate(async variant => {
         // eslint-disable-next-line no-undef
         const response = await globalThis.fetch('/rest/templates', {
             method: 'POST',
@@ -188,12 +192,10 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
             body: JSON.stringify({
                 name: 'Playwright Mosaico initialization fixture',
                 description: 'Synthetic CI data',
-                type: 'mosaico',
+                type: variant.type,
                 tag_language: 'simple',
                 namespace: 1,
-                data: {
-                    mosaicoTemplate: 1
-                },
+                data: variant.data,
                 html: '',
                 text: ''
             })
@@ -203,28 +205,30 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
             status: response.status,
             id: await response.json()
         };
-    });
+    }, variant);
 
     expect(createdTemplate.status).toBe(200);
     expect(createdTemplate.id).toBeGreaterThan(0);
 
     const capability = await page.evaluate(async id => {
-        const post = async params => {
+        const post = async (params, method = 'mosaico') => {
             // eslint-disable-next-line no-undef
             const response = await globalThis.fetch('/rest/restricted-access-token', {
                 method: 'POST',
                 // eslint-disable-next-line no-undef
                 headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
-                body: JSON.stringify({method: 'mosaico', params})
+                body: JSON.stringify({method, params})
             });
             return {status: response.status, body: await response.json()};
         };
         return {
             invalid: await post({entityTypeId: 'unsupported', entityId: id}),
+            wrongEditor: await post({entityTypeId: 'template', entityId: id}, 'codeeditor'),
             valid: await post({entityTypeId: 'template', entityId: id})
         };
     }, createdTemplate.id);
     expect(capability.invalid.status).toBe(403);
+    expect(capability.wrongEditor.status).toBe(403);
     expect(capability.valid.status).toBe(200);
     const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
     const deniedUpload = await page.request.post(`${capabilityBase}/mosaico/upload/template/999999999`, {
@@ -277,7 +281,9 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     await page.goto(`${trustedOrigin}/campaigns/${campaign.id}/content`);
     await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
 
-    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(200);
+    const scopedResource = `${capabilityBase}/mosaico/upload/template/${createdTemplate.id}`;
+    expect((await page.request.get(scopedResource)).status()).toBe(200);
+    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(variant.type === 'mosaico' ? 200 : 403);
     const logoutStatus = await page.evaluate(async () => {
         // eslint-disable-next-line no-undef
         const response = await globalThis.fetch('/rest/logout', {
@@ -288,8 +294,9 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
         return response.status;
     });
     expect(logoutStatus).toBe(200);
-    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`, {maxRedirects: 0})).status()).toBe(302);
+    expect((await page.request.get(scopedResource, {maxRedirects: 0})).status()).toBe(302);
 });
+}
 
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {
     test.setTimeout(60000); // Two intentional five-second cache writes plus reconciliation waits.
