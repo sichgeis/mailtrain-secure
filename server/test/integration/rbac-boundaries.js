@@ -115,6 +115,29 @@ async function run() {
             .first();
         assert.equal(assignedRole.role, 'campaignsViewer');
 
+        const privilegedId = await users.create(adminContext, {
+            username: 'rbac-privileged-target', name: 'Privileged Target',
+            email: 'rbac-privileged@example.invalid', password: 'Synthetic-RBAC-Password-123!',
+            namespace: childNamespaceId, role: 'master'
+        });
+        const privileged = await users.getById(controlledContext, privilegedId);
+        await expectPermissionDenied(() => users.updateWithConsistencyCheck(controlledContext, {
+            ...privileged, originalHash: users.hash(privileged), password: 'Replacement-RBAC-Password-456!'
+        }, false));
+        await expectPermissionDenied(() => users.updateWithConsistencyCheck(controlledContext, {
+            ...privileged, originalHash: users.hash(privileged), email: 'replacement@example.invalid', password: ''
+        }, false));
+        await expectPermissionDenied(() => users.remove(controlledContext, privilegedId));
+
+        const extraNamespaceId = await namespaces.create(adminContext, {
+            name: 'Synthetic separate tenant', namespace: 1
+        });
+        await shares.assign(adminContext, 'namespace', extraNamespaceId, localUserId, 'campaignsViewer');
+        const sharedTarget = await users.getById(controlledContext, localUserId);
+        await expectPermissionDenied(() => users.updateWithConsistencyCheck(controlledContext, {
+            ...sharedTarget, originalHash: users.hash(sharedTarget), password: 'Replacement-RBAC-Password-456!'
+        }, false));
+
         process.stdout.write('Validated RBAC grant ceilings and legitimate namespace administration\n');
     } finally {
         await knex.destroy();
