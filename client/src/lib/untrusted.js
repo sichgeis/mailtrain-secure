@@ -7,7 +7,8 @@ import {requiresAuthenticatedUser, withPageHelpers} from "./page";
 import {withAsyncErrorHandler, withErrorHandling} from "./error-handling";
 import axios from "./axios";
 import styles from "./styles.scss";
-import {getSandboxUrl, getUrl, setRestrictedAccessToken} from "./urls";
+import {getSandboxUrl, getTrustedUrl, getUrl, setRestrictedAccessToken} from "./urls";
+import {acceptEditorMessage, PendingEditorRequests} from '../../../shared/editor-messages';
 import {withComponentMixins} from "./decorator-helpers";
 
 @withComponentMixins([
@@ -31,7 +32,7 @@ export class UntrustedContentHost extends Component {
         this.contentNodeRefHandler = node => this.contentNode = node;
 
         this.rpcCounter = 0;
-        this.rpcResolves = new Map();
+        this.rpcResolves = new PendingEditorRequests();
 
         this.unmounted = false;
     }
@@ -51,6 +52,7 @@ export class UntrustedContentHost extends Component {
     }
 
     async receiveMessage(evt) {
+        if (!acceptEditorMessage(evt, this.contentNode && this.contentNode.contentWindow, getSandboxUrl())) return;
         const msg = evt.data;
 
         if (msg.type === 'initNeeded') {
@@ -64,9 +66,9 @@ export class UntrustedContentHost extends Component {
                 });
             }
         } else if (msg.type === 'rpcResponse') {
-            const resolve = this.rpcResolves.get(msg.data.msgId);
-            resolve(msg.data.ret);
+            this.rpcResolves.resolve(msg.data.msgId, msg.data.ret);
         } else if (msg.type === 'rpcRequest') {
+            if (!this.props.onMethodAsync) return;
             const ret = await this.props.onMethodAsync(msg.data.method, msg.data.params);
             this.sendMessage('rpcResponse', {msgId: msg.data.msgId, ret});
         } else if (msg.type === 'clientHeight') {
@@ -78,7 +80,7 @@ export class UntrustedContentHost extends Component {
     sendMessage(type, data) {
         if (this.contentNodeIsLoaded && this.contentNode) { // This is to avoid errors: Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('http://localhost:8081') does not match the recipient window's origin ('http://localhost:3000')"
                                                             // When the child window is closed during processing of the message, the this.contentNode becomes null and we can't deliver the response
-            this.contentNode.contentWindow.postMessage({type, data}, getSandboxUrl());
+            this.contentNode.contentWindow.postMessage({type, data}, new URL(getSandboxUrl()).origin);
         }
     }
 
@@ -86,6 +88,7 @@ export class UntrustedContentHost extends Component {
         if (this.contentNodeIsLoaded) {
             this.rpcCounter += 1;
             const msgId = this.rpcCounter;
+            const pending = this.rpcResolves.wait(msgId);
 
             this.sendMessage('rpcRequest', {
                 method,
@@ -93,9 +96,7 @@ export class UntrustedContentHost extends Component {
                 msgId
             });
 
-            return await (new Promise((resolve, reject) => {
-                this.rpcResolves.set(msgId, resolve);
-            }));
+            return await pending;
         }
     }
 
@@ -155,6 +156,7 @@ export class UntrustedContentHost extends Component {
 
     componentWillUnmount() {
         this.unmounted = true;
+        this.rpcResolves.close();
         clearTimeout(this.refreshAccessTokenTimeout);
         window.removeEventListener('message', this.receiveMessageHandler, false);
     }
@@ -228,6 +230,7 @@ export class UntrustedContentRoot extends Component {
 
 
     async receiveMessage(evt) {
+        if (!acceptEditorMessage(evt, window.parent, getTrustedUrl())) return;
         const msg = evt.data;
 
         if (msg.type === 'initAvailable') {
@@ -246,7 +249,7 @@ export class UntrustedContentRoot extends Component {
     }
 
     sendMessage(type, data) {
-        window.parent.postMessage({type, data}, '*');
+        window.parent.postMessage({type, data}, new URL(getTrustedUrl()).origin);
     }
 
     componentDidMount() {
@@ -258,6 +261,7 @@ export class UntrustedContentRoot extends Component {
     componentWillUnmount() {
         window.removeEventListener('message', this.receiveMessageHandler, false);
         clearTimeout(this.periodicTimeoutId);
+        parentRPC.rpcResolves.close();
     }
 
     render() {
@@ -284,7 +288,7 @@ class ParentRPC {
         this.receiveMessageHandler = ::this.receiveMessage;
 
         this.rpcCounter = 0;
-        this.rpcResolves = new Map();
+        this.rpcResolves = new PendingEditorRequests();
         this.methodHandlers = new Map();
 
         this.initialized = false;
@@ -309,6 +313,7 @@ class ParentRPC {
         this.enforceInitialized();
         this.rpcCounter += 1;
         const msgId = this.rpcCounter;
+        const pending = this.rpcResolves.wait(msgId);
 
         this.sendMessage('rpcRequest', {
             method,
@@ -316,9 +321,7 @@ class ParentRPC {
             msgId
         });
 
-        return await (new Promise((resolve, reject) => {
-            this.rpcResolves.set(msgId, resolve);
-        }));
+        return await pending;
     }
 
 
@@ -332,16 +335,17 @@ class ParentRPC {
     }
 
     async receiveMessage(evt) {
+        if (!acceptEditorMessage(evt, window.parent, getTrustedUrl())) return;
         const msg = evt.data;
 
         if (msg.type === 'rpcResponse') {
-            const resolve = this.rpcResolves.get(msg.data.msgId);
-            resolve(msg.data.ret);
+            this.rpcResolves.resolve(msg.data.msgId, msg.data.ret);
 
         } else if (msg.type === 'rpcRequest') {
             let ret;
 
             const method = msg.data.method;
+            if (!this.methodHandlers.has(method)) return;
             if (this.methodHandlers.has(method)) {
                 const handler = this.methodHandlers.get(method);
                 ret = await handler(method, msg.data.params);
@@ -352,7 +356,7 @@ class ParentRPC {
     }
 
     sendMessage(type, data) {
-        window.parent.postMessage({type, data}, '*');
+        window.parent.postMessage({type, data}, new URL(getTrustedUrl()).origin);
     }
 }
 

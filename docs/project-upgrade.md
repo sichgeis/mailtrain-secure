@@ -1,5 +1,22 @@
 # Mailtrain Security Hardening Program
 
+## Active round 2 — September 2026
+
+This section supersedes the historical stage status below. Baseline: `a79bf00e1a81bebf9b886d847efe0afb8a568152`; worktree branch: `codex/security-round2-capabilities`.
+
+The user approved autonomous fixes, regular commits/pushes, reviewed green PR merges, and a deployment/smoke-test handoff to the infrastructure task. This task does not deploy or access production data. Preserve existing campaigns, editors (including the narrowly scoped Mosaico CSP exception), LDAP/CAS, and public historical images.
+
+| Stage | Status | Acceptance |
+| --- | --- | --- |
+| Capability and account boundaries | In progress | Fail-closed editor grants, trusted-only account routes, target-account privilege ceilings, forged-message rejection; unit and real DB/browser regression tests |
+| Session revocation | Pending | Fresh DB identities, absolute expiry, password/role revocation, session-bound capabilities, LDAP/CAS parity |
+| Upload and image resource bounds | Pending | Pre-upload authorization and cleanup; bounded/coalesced transforms, timeout and miss throttling without breaking cache hits |
+| Spreadsheet-safe CSV | Pending | Safe exports by default, explicit raw compatibility mode |
+| Dependency maintenance | Pending | Authorized registry audits, feasible supported updates, scheduled scans with distinct runtime/dev evidence |
+| Final review and deployment handoff | Pending | Five required CI gates green, reviewed/pushed commits and exact merged SHA sent to infrastructure with smoke checklist |
+
+Evidence so far: capability unit regressions pass; account-ceiling DB regressions added but not yet executed; editor-message tests pass (3/3). No stage is complete until integration/build checks pass. Next action: finish editor message lifecycle tests and run the synthetic database/browser suite. No current blocker.
+
 ## Outcome
 
 Produce a private, reviewable Mailtrain v2 hardening line that preserves application and database behavior while closing the confirmed authorization, network, file, session, secret-handling, dependency, and deployment weaknesses. The target runtime is Node.js 24 LTS. The supported database matrix is MariaDB 10.4+ and MySQL 8. The target deployment is Docker Compose behind Traefik with distinct trusted, sandbox, and public HTTPS origins.
