@@ -30,6 +30,7 @@ const hashKeys = new Set(['username', 'name', 'email', 'namespace', 'role']);
 const shares = require('./shares');
 const contextHelpers = require('../lib/context-helpers');
 const {RestrictedTokenStore} = require('../lib/restricted-token-store');
+const {enforceUnrestrictedIdentity, validateCapability} = require('../lib/capability-policy');
 const {allowPlaintext, getStorage, lookupCandidates, lookupHash} = require('../lib/secret-storage');
 
 function hash(entity) {
@@ -37,7 +38,7 @@ function hash(entity) {
 }
 
 async function _getByTx(tx, context, key, value, extraColumns = []) {
-    const columns = ['id', 'username', 'name', 'email', 'namespace', 'role', ...extraColumns];
+    const columns = ['id', 'username', 'name', 'email', 'namespace', 'role', 'auth_version', ...extraColumns];
 
     const user = await tx('users').select(columns).where(key, value).first();
 
@@ -193,8 +194,12 @@ async function create(context, user) {
 }
 
 async function updateWithConsistencyCheck(context, user, isOwnAccount) {
+    if (isOwnAccount) {
+        enforceUnrestrictedIdentity(context);
+        enforce(context.user.id === user.id, 'Account identity mismatch');
+    }
     await knex.transaction(async tx => {
-        const existing = await tx('users').where('id', user.id).first();
+        const existing = await tx('users').where('id', user.id).forUpdate().first();
         if (!existing) {
             shares.throwPermissionDenied();
         }
@@ -205,6 +210,7 @@ async function updateWithConsistencyCheck(context, user, isOwnAccount) {
         }
 
         if (!isOwnAccount) {
+            await shares.enforceAccountManagementTx(tx, context, existing);
             await shares.enforceEntityPermissionTx(tx, context, 'namespace', user.namespace, 'manageUsers');
             await shares.enforceEntityPermissionTx(tx, context, 'namespace', existing.namespace, 'manageUsers');
 
@@ -231,6 +237,15 @@ async function updateWithConsistencyCheck(context, user, isOwnAccount) {
             await tx('users').where('id', user.id).update(filterObject(user, allowedKeysExternal));
         }
 
+        if (user.password || (!isOwnAccount && (existing.namespace !== user.namespace || existing.role !== user.role))) {
+            const revoked = {auth_version: tx.raw('auth_version + 1')};
+            if (user.password) Object.assign(revoked, {
+                access_token: null, access_token_hash: null, access_token_key_id: null,
+                reset_token: null, reset_token_hash: null, reset_token_key_id: null, reset_expire: null
+            });
+            await tx('users').where('id', user.id).update(revoked);
+        }
+
         // Removes the default shares based on the user role and rebuilds permissions.
         // rebuildPermissions adds the default shares based on the user role, which will reflect the changes
         // done to the user.
@@ -253,6 +268,7 @@ async function remove(context, userId) {
         }
 
         await shares.enforceEntityPermissionTx(tx, context, 'namespace', existing.namespace, 'manageUsers');
+        await shares.enforceAccountManagementTx(tx, context, existing);
 
         await tx('users').where('id', userId).del();
     });
@@ -328,12 +344,16 @@ async function getByUsernameIfPasswordMatch(context, username, password) {
     }
 }
 
-async function getAccessToken(userId) {
+async function getAccessToken(context) {
+    enforceUnrestrictedIdentity(context);
+    const userId = context.user.id;
     const user = await _getBy(contextHelpers.getAdminContext(), 'id', userId, ['access_token', 'access_token_hash']);
     return {exists: !!(user.access_token_hash || user.access_token)};
 }
 
-async function resetAccessToken(userId) {
+async function resetAccessToken(context) {
+    enforceUnrestrictedIdentity(context);
+    const userId = context.user.id;
     const token = crypto.randomBytes(32).toString('base64url');
     getStorage({required: true});
     const fields = {
@@ -341,7 +361,8 @@ async function resetAccessToken(userId) {
         access_token_hash: lookupHash(token, 'access-token'),
         access_token_key_id: getStorage({required: true}).keyId
     };
-    await knex('users').where({id: userId}).update(fields);
+    const changed = await knex('users').where({id: userId, auth_version: context.user.auth_version}).update(fields);
+    if (changed !== 1) shares.throwPermissionDenied();
     return token;
 }
 
@@ -446,6 +467,10 @@ async function resetPassword(username, resetToken, password) {
 
             await tx('users').where({username}).update({
                 password,
+                auth_version: tx.raw('auth_version + 1'),
+                access_token: null,
+                access_token_hash: null,
+                access_token_key_id: null,
                 reset_token: null,
                 reset_token_hash: null,
                 reset_token_key_id: null,
@@ -459,7 +484,7 @@ async function resetPassword(username, resetToken, password) {
 
 
 
-const restrictedAccessTokenMethods = {};
+const restrictedAccessTokenMethods = Object.create(null);
 const restrictedAccessTokens = new RestrictedTokenStore(config.security.restrictedAccessTokens);
 
 function registerRestrictedAccessTokenMethod(method, getHandlerFromParams) {
@@ -467,13 +492,31 @@ function registerRestrictedAccessTokenMethod(method, getHandlerFromParams) {
 }
 
 async function getRestrictedAccessToken(context, method, params) {
+    enforceUnrestrictedIdentity(context);
+    const {validIdentity} = require('../lib/session-identity');
+    if (!context.sessionId || !validIdentity(context.sessionIdentity, context.user)) shares.throwPermissionDenied();
+    if (!Object.hasOwn(restrictedAccessTokenMethods, method) || !params || typeof params !== 'object' || Array.isArray(params)) {
+        shares.throwPermissionDenied();
+    }
+    const handler = await restrictedAccessTokenMethods[method](params, context);
+    validateCapability(handler);
+    // Factories describe a ceiling; they must never confer permissions the user lacks.
+    for (const [entityTypeId, entries] of Object.entries(handler.permissions)) {
+        for (const [entityId, permissions] of Object.entries(entries)) {
+            for (const permission of permissions) {
+                await shares.enforceEntityPermission(context, entityTypeId, Number(entityId), permission);
+            }
+        }
+    }
     const token = crypto.randomBytes(24).toString('hex').toLowerCase();
     const tokenEntry = {
         token,
         userId: context.user.id,
+        sessionId: context.sessionId,
+        authVersion: context.user.auth_version,
         method,
         params,
-        handler: await restrictedAccessTokenMethods[method](params)
+        handler
     };
 
     restrictedAccessTokens.create(tokenEntry);
@@ -482,16 +525,26 @@ async function getRestrictedAccessToken(context, method, params) {
 }
 
 async function refreshRestrictedAccessToken(context, token) {
+    enforceUnrestrictedIdentity(context);
+    const entry = restrictedAccessTokens.get(token);
+    if (!entry || !context.sessionId || entry.sessionId !== context.sessionId || entry.authVersion !== context.user.auth_version) {
+        shares.throwPermissionDenied();
+    }
     if (!restrictedAccessTokens.refresh(token, context.user.id)) {
         shares.throwPermissionDenied();
     }
 }
 
-async function getByRestrictedAccessToken(token) {
+async function getByRestrictedAccessToken(token, sessionStore) {
     const tokenEntry = restrictedAccessTokens.get(token);
 
     if (tokenEntry) {
+        validateCapability(tokenEntry.handler);
         const user = await getById(contextHelpers.getAdminContext(), tokenEntry.userId);
+        if (!sessionStore || tokenEntry.authVersion !== user.auth_version) shares.throwPermissionDenied();
+        const session = await new Promise((resolve, reject) => sessionStore.get(tokenEntry.sessionId, (err, value) => err ? reject(err) : resolve(value)));
+        const {validIdentity} = require('../lib/session-identity');
+        if (!session || !session.passport || !validIdentity(session.passport.user, user)) shares.throwPermissionDenied();
         user.restrictedAccessMethod = tokenEntry.method;
         user.restrictedAccessHandler = tokenEntry.handler;
         user.restrictedAccessToken = tokenEntry.token;

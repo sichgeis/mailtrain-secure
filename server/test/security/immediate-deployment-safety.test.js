@@ -1,4 +1,5 @@
 'use strict';
+const {EventEmitter} = require('node:events');
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -112,7 +113,7 @@ test('campaign uploads and OpenPGP buffering have explicit production bounds', (
 test('aggregate upload storage aborts before writing beyond the request budget', async () => {
     const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-upload-limit-'));
     const storage = createAggregateDiskStorage({destination, maxTotalBytes: 16});
-    const req = {};
+    const req = new EventEmitter();
     const store = size => new Promise(resolve => storage._handleFile(req, {
         stream: Readable.from([Buffer.alloc(size)]),
         originalname: 'synthetic.bin',
@@ -133,7 +134,7 @@ test('aggregate upload storage aborts before writing beyond the request budget',
 test('aggregate upload storage cannot orphan a file when cleanup races completion', async () => {
     const destination = fs.mkdtempSync(path.join(os.tmpdir(), 'mailtrain-upload-abort-'));
     const storage = createAggregateDiskStorage({destination, maxTotalBytes: 16});
-    const req = {};
+    const req = new EventEmitter();
     const stream = new PassThrough();
     const file = {stream, originalname: 'synthetic.bin', mimetype: 'application/octet-stream'};
     const completed = new Promise(resolve => storage._handleFile(req, file, (err, stored) => resolve({err, stored})));

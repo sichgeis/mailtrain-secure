@@ -167,6 +167,7 @@ export default class List extends Component {
                 <Toolbar>
                     <a href={getPublicUrl(`subscription/${this.props.list.cid}`, {withLocale: true})}><Button label={t('subscriptionForm-1')} className="btn-secondary"/></a>
                     <a href={getUrl(`subscriptions/export/${this.props.list.id}/`+ (this.props.segmentId || 0))}><Button label={t('exportAsCsv')} className="btn-primary"/></a>
+                    {' '}<a href={getUrl(`subscriptions/export/${this.props.list.id}/${this.props.segmentId || 0}?format=raw`)} title="For machine imports only; spreadsheet formulas are not neutralized">Raw CSV (machine import)</a>
                     <LinkButton to={`/lists/${this.props.list.id}/subscriptions/create`} className="btn-primary" icon="plus" label={t('addSubscriber')}/>
                 </Toolbar>
 

@@ -40,6 +40,11 @@ function getFilesPermission(type, subType, operation) {
     return entityTypes[type].files[subType].permissions[operation];
 }
 
+async function authorizeUpload(context, type, subType, entityId) {
+    enforceTypePermitted(type, subType);
+    await shares.enforceEntityPermission(context, type, entityId, getFilesPermission(type, subType, 'manage'));
+}
+
 async function listDTAjax(context, type, subType, entityId, params) {
     enforceTypePermitted(type, subType);
     await shares.enforceEntityPermission(context, type, entityId, getFilesPermission(type, subType, 'view'));
@@ -365,6 +370,7 @@ module.exports.getFileByFilename = getFileByFilename;
 module.exports.getFileByUrl = getFileByUrl;
 module.exports.getFileByOriginalName = getFileByOriginalName;
 module.exports.createFiles = createFiles;
+module.exports.authorizeUpload = authorizeUpload;
 module.exports.removeFile = removeFile;
 module.exports.getFileUrl = getFileUrl;
 module.exports.getFilePath = getFilePath;

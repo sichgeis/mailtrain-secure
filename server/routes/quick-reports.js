@@ -11,10 +11,12 @@ const {SubscriptionStatus} = require('../../shared/lists');
 const knex = require('../lib/knex');
 const {LinkId} = require('../models/links');
 const moment = require('moment');
+const {csvOptions} = require('../lib/csv-safety');
 
 const router = require('../lib/router-async').create();
 
 router.getAsync('/open-and-click-counts/:campaignId', passport.loggedIn, async (req, res) => {
+    const safety = csvOptions(req.query.format);
     const campaignId = castToInteger(req.params.campaignId);
 
     await shares.enforceEntityPermission(req.context, 'campaign', campaignId, 'viewStats');
@@ -43,6 +45,7 @@ router.getAsync('/open-and-click-counts/:campaignId', passport.loggedIn, async (
         results,
         res,
         {
+            ...safety,
             header: true,
             columns: [
                 { key: 'subscription:email', header: 'Email' },

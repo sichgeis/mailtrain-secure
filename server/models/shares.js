@@ -243,6 +243,25 @@ async function enforceGlobalRoleAssignmentTx(tx, context, namespaceId, role) {
     }
 }
 
+async function enforceAccountManagementTx(tx, context, target) {
+    const {enforceUnrestrictedIdentity} = require('../lib/capability-policy');
+    enforceUnrestrictedIdentity(context);
+    if (context.user.admin) {
+        return;
+    }
+    await enforceEntityPermissionTx(tx, context, 'namespace', target.namespace, 'manageUsers');
+    await enforceGlobalRoleAssignmentTx(tx, context, target.namespace, target.role);
+    // Account takeover also confers explicit shares outside the home namespace.
+    for (const type of Object.values(entitySettings.getEntityTypesWithPermissions())) {
+        const targetPermissions = await tx(type.permissionsTable).where('user', target.id).select('entity', 'operation');
+        const ownPermissions = await tx(type.permissionsTable).where('user', context.user.id).select('entity', 'operation');
+        const available = new Set(ownPermissions.map(row => `${row.entity}:${row.operation}`));
+        if (targetPermissions.some(row => !available.has(`${row.entity}:${row.operation}`))) {
+            throwPermissionDenied();
+        }
+    }
+}
+
 async function rebuildPermissionsTx(tx, restriction) {
     restriction = restriction || {};
 
@@ -580,6 +599,9 @@ function checkGlobalPermission(context, requiredOperations) {
     if (!context.user) {
         return false;
     }
+    if (context.user.restrictedAccessToken && !context.user.restrictedAccessHandler) {
+        return false;
+    }
 
     if (typeof requiredOperations === 'string') {
         requiredOperations = [ requiredOperations ];
@@ -735,6 +757,9 @@ function getGlobalPermissions(context) {
     if (!context.user) {
         return [];
     }
+    if (context.user.restrictedAccessToken && !context.user.restrictedAccessHandler) {
+        return [];
+    }
 
     enforce(!context.user.admin, 'getPermissions is not supposed to be called by assumed admin');
 
@@ -768,6 +793,9 @@ async function getPermissionsTx(tx, context, entityTypeId, entityId) {
 
 // If entityId is null, it means that we require that restrictedAccessHandler does not differentiate based on entityId. This is used in ajaxListWithPermissionsTx.
 function filterPermissionsByRestrictedAccessHandler(context, entityTypeId, entityId, permissions, operationMsg) {
+    if (context.user.restrictedAccessToken && !context.user.restrictedAccessHandler) {
+        return [];
+    }
     if (context.user.restrictedAccessHandler) {
         const originalOperations = permissions;
         if (context.user.restrictedAccessHandler.permissions) {
@@ -821,6 +849,7 @@ module.exports.listUnassignedUsersDTAjax = listUnassignedUsersDTAjax;
 module.exports.listRolesDTAjax = listRolesDTAjax;
 module.exports.assign = assign;
 module.exports.enforceGlobalRoleAssignmentTx = enforceGlobalRoleAssignmentTx;
+module.exports.enforceAccountManagementTx = enforceAccountManagementTx;
 module.exports.enforceRoleGrantTx = enforceRoleGrantTx;
 module.exports.rebuildPermissionsTx = rebuildPermissionsTx;
 module.exports.rebuildPermissions = rebuildPermissions;

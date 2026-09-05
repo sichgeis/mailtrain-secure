@@ -1,5 +1,22 @@
 # Mailtrain Security Hardening Program
 
+## Active round 2 — September 2026
+
+This section supersedes the historical stage status below. Baseline: `a79bf00e1a81bebf9b886d847efe0afb8a568152`; worktree branch: `codex/security-round2-capabilities`.
+
+The user approved autonomous fixes, regular commits/pushes, reviewed green PR merges, and a deployment/smoke-test handoff to the infrastructure task. This task does not deploy or access production data. Preserve existing campaigns, editors (including the narrowly scoped Mosaico CSP exception), LDAP/CAS, and public historical images.
+
+| Stage | Status | Acceptance |
+| --- | --- | --- |
+| Capability and account boundaries | Completed | Fail-closed editor grants, trusted-only account routes, target-account privilege ceilings, forged-message rejection; unit and real DB/browser regression tests |
+| Session revocation | Completed | Fresh DB identities, absolute expiry, password/role revocation, session-bound capabilities, LDAP/CAS parity |
+| Upload and image resource bounds | Completed | Pre-upload authorization and cleanup; bounded/coalesced transforms, timeout and miss throttling without breaking cache hits |
+| Spreadsheet-safe CSV | Completed | Safe exports by default, explicit raw compatibility mode |
+| Dependency maintenance | Completed | Zero advisories in four current runtimes and current server/client development graphs; scheduled scans |
+| Final code review and CI | Completed | All five CI gates passed at f75adf45696d322fdc44bf60bf5611af30291803; review and smoke-test handoff instructions recorded in PR #86 |
+
+Evidence and rollout compatibility: [round-2-validation.md](security/round-2-validation.md). [PR #86](https://github.com/sichgeis/mailtrain-secure/pull/86) records the authoritative merged identity and final check state. Code hardening is complete; this evidence-only closeout must also pass CI before merge. Next operational action belongs to “Continue from agent handoff”: deploy the exact merged v2 SHA using the existing backup/rollback runbook and execute the documented smoke checklist. No production deployment or external mail was performed here.
+
 ## Outcome
 
 Produce a private, reviewable Mailtrain v2 hardening line that preserves application and database behavior while closing the confirmed authorization, network, file, session, secret-handling, dependency, and deployment weaknesses. The target runtime is Node.js 24 LTS. The supported database matrix is MariaDB 10.4+ and MySQL 8. The target deployment is Docker Compose behind Traefik with distinct trusted, sandbox, and public HTTPS origins.

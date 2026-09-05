@@ -18,7 +18,7 @@ router.postAsync('/account', passport.loggedIn, passport.csrfProtection, async (
     const data = req.body;
     data.id = req.user.id;
 
-    await users.updateWithConsistencyCheck(contextHelpers.getAdminContext(), req.body, true);
+    await users.updateWithConsistencyCheck(req.context, req.body, true);
     return res.json();
 });
 
@@ -30,13 +30,13 @@ router.postAsync('/account-validate', passport.loggedIn, passport.csrfProtection
 });
 
 router.getAsync('/access-token', passport.loggedIn, async (req, res) => {
-    const accessToken = await users.getAccessToken(req.user.id);
+    const accessToken = await users.getAccessToken(req.context);
     return res.json(accessToken);
 
 });
 
 router.postAsync('/access-token-reset', passport.loggedIn, passport.csrfProtection, async (req, res) => {
-    const accessToken = await users.resetAccessToken(req.user.id);
+    const accessToken = await users.resetAccessToken(req.context);
     return res.json(accessToken);
 });
 

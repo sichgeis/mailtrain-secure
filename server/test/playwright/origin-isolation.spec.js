@@ -98,6 +98,11 @@ test('synthetic admin can log in through the trusted origin', async ({page}) => 
     expect(csrfCookie).toBeDefined();
     expect(csrfCookie.httpOnly).toBe(true);
     expect(csrfCookie.sameSite).toBe('Lax');
+
+    // A password/role change increments this version; even a valid signed cookie
+    // must no longer authenticate on the next request.
+    await knex('users').where({id: 1}).increment('auth_version', 1);
+    expect((await page.request.get(`${trustedOrigin}/rest/account`)).status()).not.toBe(200);
 });
 
 test('selectable tables expose clear pointer, keyboard, and selection affordances', async ({page}) => {
@@ -155,7 +160,11 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     const dialogs = [];
     page.on('dialog', async dialog => {
         dialogs.push(dialog.message());
-        await dialog.dismiss();
+        if (dialog.type() === 'beforeunload') {
+            await dialog.accept();
+        } else {
+            await dialog.dismiss();
+        }
     });
 
     await page.goto(`${trustedOrigin}/login`);
@@ -199,6 +208,40 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     expect(createdTemplate.status).toBe(200);
     expect(createdTemplate.id).toBeGreaterThan(0);
 
+    const capability = await page.evaluate(async id => {
+        const post = async params => {
+            // eslint-disable-next-line no-undef
+            const response = await globalThis.fetch('/rest/restricted-access-token', {
+                method: 'POST',
+                // eslint-disable-next-line no-undef
+                headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
+                body: JSON.stringify({method: 'mosaico', params})
+            });
+            return {status: response.status, body: await response.json()};
+        };
+        return {
+            invalid: await post({entityTypeId: 'unsupported', entityId: id}),
+            valid: await post({entityTypeId: 'template', entityId: id})
+        };
+    }, createdTemplate.id);
+    expect(capability.invalid.status).toBe(403);
+    expect(capability.valid.status).toBe(200);
+    const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
+    const deniedUpload = await page.request.post(`${capabilityBase}/mosaico/upload/template/999999999`, {
+        multipart: {'files[]': {name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('synthetic rejected upload')}}
+    });
+    expect(deniedUpload.status()).toBe(403);
+    for (const endpoint of ['account', 'access-token']) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await page.request.get(`${capabilityBase}/rest/${endpoint}`);
+        expect(response.status()).toBe(404);
+    }
+    for (const endpoint of ['access-token-reset', 'restricted-access-token']) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await page.request.post(`${capabilityBase}/rest/${endpoint}`, {data: {}});
+        expect(response.status()).toBe(404);
+    }
+
     const editorResponsePromise = page.waitForResponse(response => {
         const url = new URL(response.url());
         return url.origin === sandboxOrigin && url.pathname === '/anonymous/mosaico/editor';
@@ -216,9 +259,40 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     await expect(editor.locator('[title*="Click or drag to add this block"]').first()).toBeVisible();
     await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
     expect(dialogs).not.toContain('Update your browser!');
+
+    // Campaign editing must get explicit scoped capabilities, not rely on an
+    // unsupported factory returning an unrestricted identity.
+    const campaign = await page.evaluate(async templateId => {
+        // eslint-disable-next-line no-undef
+        const response = await globalThis.fetch('/rest/campaigns', {
+            method: 'POST',
+            // eslint-disable-next-line no-undef
+            headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
+            body: JSON.stringify({name: 'Synthetic editor campaign', namespace: 1, type: 1, source: 3,
+                send_configuration: 1, lists: [{list: 1}], data: {sourceTemplate: templateId}})
+        });
+        return {status: response.status, id: await response.json()};
+    }, createdTemplate.id);
+    expect(campaign.status, JSON.stringify(campaign.id)).toBe(200);
+    await page.goto(`${trustedOrigin}/campaigns/${campaign.id}/content`);
+    await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
+
+    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(200);
+    const logoutStatus = await page.evaluate(async () => {
+        // eslint-disable-next-line no-undef
+        const response = await globalThis.fetch('/rest/logout', {
+            method: 'POST',
+            // eslint-disable-next-line no-undef
+            headers: {'X-CSRF-TOKEN': globalThis.csrfToken}
+        });
+        return response.status;
+    });
+    expect(logoutStatus).toBe(200);
+    expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`, {maxRedirects: 0})).status()).toBe(302);
 });
 
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {
+    test.setTimeout(60000); // Two intentional five-second cache writes plus reconciliation waits.
     const cacheType = 'mosaico-images';
     const params = '37,19';
     const sourceFilename = 'cache-persistence-fixture.png';
