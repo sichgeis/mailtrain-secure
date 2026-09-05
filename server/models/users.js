@@ -361,7 +361,8 @@ async function resetAccessToken(context) {
         access_token_hash: lookupHash(token, 'access-token'),
         access_token_key_id: getStorage({required: true}).keyId
     };
-    await knex('users').where({id: userId}).update(fields);
+    const changed = await knex('users').where({id: userId, auth_version: context.user.auth_version}).update(fields);
+    if (changed !== 1) shares.throwPermissionDenied();
     return token;
 }
 

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createIdentity, validIdentity} = require('../../lib/session-identity');
+const {createIdentity, validIdentity, sessionUser} = require('../../lib/session-identity');
 
 test('sessions have an absolute lifetime and reject legacy or revoked identities', () => {
     const user = {id: 12, auth_version: 3};
@@ -16,4 +16,10 @@ test('sessions have an absolute lifetime and reject legacy or revoked identities
     assert.equal(validIdentity(createIdentity(user, true, 1000), user, 1000 + 29 * 86400000), true);
     assert.equal(validIdentity(createIdentity(user, true, 1000), user, 1000 + 30 * 86400000), false);
     assert.equal(validIdentity({...identity, issuedAt: 2000}, user, 1001), false);
+});
+
+test('external display profiles cannot preserve stale role or namespace authority', () => {
+    const current = {id: 12, role: 'nobody', namespace: 3, auth_version: 4};
+    const identity = {...createIdentity(current, false), profile: {name: 'Directory Name', email: 'synthetic@example.invalid', role: 'master', namespace: 1}};
+    assert.deepEqual(sessionUser(identity, current), {...current, name: 'Directory Name', email: 'synthetic@example.invalid'});
 });

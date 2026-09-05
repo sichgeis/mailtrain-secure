@@ -138,6 +138,31 @@ async function run() {
             ...sharedTarget, originalHash: users.hash(sharedTarget), password: 'Replacement-RBAC-Password-456!'
         }, false));
 
+        await knex('users').where({id: localUserId}).update({access_token: 'synthetic-legacy-api-token', reset_token: 'synthetic-reset-token'});
+        await users.updateWithConsistencyCheck(adminContext, {
+            ...sharedTarget, originalHash: users.hash(sharedTarget), password: 'Replacement-RBAC-Password-456!'
+        }, false);
+        const revoked = await knex('users').where({id: localUserId}).first();
+        assert.equal(revoked.auth_version, sharedTarget.auth_version + 1);
+        assert.equal(revoked.access_token, null);
+        assert.equal(revoked.reset_token, null);
+        assert.equal((await users.getByUsernameIfPasswordMatch(adminContext, revoked.username, 'Replacement-RBAC-Password-456!')).id, localUserId);
+
+        // The additive migration does not revoke legacy API keys merely by deploying.
+        const oldVersion = revoked.auth_version;
+        await users.updateWithConsistencyCheck(adminContext, {
+            ...revoked, originalHash: users.hash(revoked), password: '', name: 'Harmless display-name update'
+        }, false);
+        assert.equal((await users.getById(adminContext, localUserId)).auth_version, oldVersion);
+        await knex('users').where({id: localUserId}).update({
+            reset_token: 'synthetic-reset-token', reset_expire: new Date(Date.now() + 60000), access_token: 'synthetic-api-token'
+        });
+        await users.resetPassword(revoked.username, 'synthetic-reset-token', 'Synthetic-Reset-Password-789!');
+        const resetUser = await knex('users').where({id: localUserId}).first();
+        assert.equal(resetUser.auth_version, oldVersion + 1);
+        assert.equal(resetUser.access_token, null);
+        await assert.rejects(users.resetPassword(revoked.username, 'synthetic-reset-token', 'Synthetic-Reset-Password-789!'));
+
         process.stdout.write('Validated RBAC grant ceilings and legitimate namespace administration\n');
     } finally {
         await knex.destroy();

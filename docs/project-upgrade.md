@@ -8,14 +8,14 @@ The user approved autonomous fixes, regular commits/pushes, reviewed green PR me
 
 | Stage | Status | Acceptance |
 | --- | --- | --- |
-| Capability and account boundaries | In progress | Fail-closed editor grants, trusted-only account routes, target-account privilege ceilings, forged-message rejection; unit and real DB/browser regression tests |
-| Session revocation | Pending | Fresh DB identities, absolute expiry, password/role revocation, session-bound capabilities, LDAP/CAS parity |
-| Upload and image resource bounds | Pending | Pre-upload authorization and cleanup; bounded/coalesced transforms, timeout and miss throttling without breaking cache hits |
-| Spreadsheet-safe CSV | Pending | Safe exports by default, explicit raw compatibility mode |
-| Dependency maintenance | Pending | Authorized registry audits, feasible supported updates, scheduled scans with distinct runtime/dev evidence |
-| Final review and deployment handoff | Pending | Five required CI gates green, reviewed/pushed commits and exact merged SHA sent to infrastructure with smoke checklist |
+| Capability and account boundaries | Completed locally | Fail-closed editor grants, trusted-only account routes, target-account privilege ceilings, forged-message rejection; unit and real DB/browser regression tests |
+| Session revocation | Completed locally | Fresh DB identities, absolute expiry, password/role revocation, session-bound capabilities, LDAP/CAS parity |
+| Upload and image resource bounds | Completed locally | Pre-upload authorization and cleanup; bounded/coalesced transforms, timeout and miss throttling without breaking cache hits |
+| Spreadsheet-safe CSV | Completed locally | Safe exports by default, explicit raw compatibility mode |
+| Dependency maintenance | Completed locally | Authorized registry audits: zero production advisories in four current runtimes; scheduled scans |
+| Final review and deployment handoff | In progress | Five required CI gates green, reviewed/pushed commits and exact merged SHA sent to infrastructure with smoke checklist |
 
-Evidence so far: capability unit regressions pass; account-ceiling DB regressions added but not yet executed; editor-message tests pass (3/3). No stage is complete until integration/build checks pass. Next action: finish editor message lifecycle tests and run the synthetic database/browser suite. No current blocker.
+Evidence and rollout compatibility: [round-2-validation.md](security/round-2-validation.md). Local acceptance passes; authoritative CI is still required. Next action: complete review, run all five CI gates, merge only a green reviewed head, then send the deployment task the exact merged SHA. No current blocker.
 
 ## Outcome
 

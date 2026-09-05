@@ -17,6 +17,7 @@
     "e2e": "npm run test:playwright",
     "lint:harness": "eslint lib/admin-bootstrap.js lib/auth-security.js lib/aws-ses-transport.js lib/browser-security.js lib/cas-auth.js lib/external-auth-adapter.js lib/file-cache-integrity.js lib/file-cache-reconciliation.js lib/file-cache-write-logging.js lib/geoip.js lib/html-sanitizer.js lib/log-redaction.js lib/mailgun-upload.js lib/openpgp-encrypt.js lib/outbound-fetch.js lib/rate-limit.js lib/report-execution-policy.js lib/request-rate-limiters.js lib/restricted-token-store.js lib/runtime-schema.js lib/safe-path.js lib/secret-envelope.js lib/secret-migration.js lib/secret-storage.js lib/session-security.js lib/test-database-safety.js lib/token-hash.js lib/upload-limits.js lib/user-agent.js lib/webhook-delivery-ledger.js lib/webhook-security.js routes/campaigns.js setup/security/*.js setup/validate-admin-password.js setup/validate-session-secret.js test/harness/*.js test/security/*.js test/integration/*.js test/playwright/*.js",
     "test": "npm run test:fast",
+    "lint:round2": "eslint lib/capability-policy.js lib/editor-capability.js lib/csv-safety.js lib/image-work-pool.js lib/session-identity.js lib/upload-cleanup.js",
     "test:fast": "node --test test/harness/*.test.js test/security/*.test.js",
     "test:coverage": "c8 --reporter=text --reporter=lcov npm run test:fast",
     "test:integration": "NODE_ENV=test node test/integration/schema-smoke.js && NODE_ENV=test node test/integration/rbac-boundaries.js",

@@ -7,7 +7,9 @@ async function editorCapability(editorType, {entityTypeId, entityId}, context) {
         throw new PermissionDeniedError();
     }
     // Load lazily: models register editor capabilities while the app is constructed.
+    // eslint-disable-next-line global-require
     const model = entityTypeId === 'template' ? require('../models/templates') : require('../models/campaigns');
+    // eslint-disable-next-line global-require
     const shares = require('../models/shares');
     const entity = await model.getById(context, entityId, false);
     const content = entityTypeId === 'template' ? entity : entity.data.sourceCustom;
@@ -16,6 +18,7 @@ async function editorCapability(editorType, {entityTypeId, entityId}, context) {
     }
     const operations = new Set(['view']);
     for (const permission of ['viewFiles', 'manageFiles']) {
+        // eslint-disable-next-line no-await-in-loop
         if (await shares.checkEntityPermission(context, entityTypeId, entityId, permission)) {
             operations.add(permission);
         }

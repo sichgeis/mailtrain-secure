@@ -1,8 +1,9 @@
 'use strict';
+/* global AbortController */
 
 class ImageWorkPool {
     constructor({concurrency = 2, maxQueued = 20, timeoutMs = 30000} = {}) {
-        if (![concurrency, maxQueued, timeoutMs].every(n => Number.isSafeInteger(n) && n > 0)) throw new Error('Invalid image pool limits');
+        if (![concurrency, maxQueued, timeoutMs].every(n => Number.isSafeInteger(n) && n > 0)) {throw new Error('Invalid image pool limits');}
         Object.assign(this, {concurrency, maxQueued, timeoutMs});
         this.active = 0;
         this.entries = new Map();
@@ -10,7 +11,7 @@ class ImageWorkPool {
     }
 
     run(key, work, signal) {
-        if (signal && signal.aborted) return Promise.reject(signal.reason);
+        if (signal && signal.aborted) {return Promise.reject(signal.reason);}
         let entry = this.entries.get(key);
         if (!entry) {
             if (this.active >= this.concurrency && this.queue.length >= this.maxQueued) {
@@ -27,18 +28,18 @@ class ImageWorkPool {
                 }
             }, {once: true});
         }
-        if (entry.clients.size >= 100) return Promise.reject(Object.assign(new Error('Too many image waiters'), {status: 429}));
+        if (entry.clients.size >= 100) {return Promise.reject(Object.assign(new Error('Too many image waiters'), {status: 429}));}
         const promise = new Promise((resolve, reject) => {
             const client = {resolve, reject};
-            client.cleanup = () => { if (signal) signal.removeEventListener('abort', cancel); };
-            const cancel = () => {
+            client.cleanup = () => { if (signal) {signal.removeEventListener('abort', cancel);} };
+            function cancel() {
                 client.cleanup();
                 entry.clients.delete(client);
                 reject(signal.reason);
-                if (!entry.clients.size) entry.controller.abort(signal.reason);
-            };
+                if (!entry.clients.size) {entry.controller.abort(signal.reason);}
+            }
             entry.clients.add(client);
-            if (signal) signal.addEventListener('abort', cancel, {once: true});
+            if (signal) {signal.addEventListener('abort', cancel, {once: true});}
         });
         this.drain();
         return promise;
@@ -64,8 +65,8 @@ class ImageWorkPool {
         this.entries.delete(entry.key);
         for (const client of entry.clients) {
             client.cleanup();
-            if (error) client.reject(error);
-            else client.resolve(value);
+            if (error) {client.reject(error);}
+            else {client.resolve(value);}
         }
         entry.clients.clear();
     }

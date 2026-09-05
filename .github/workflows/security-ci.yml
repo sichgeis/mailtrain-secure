@@ -56,6 +56,7 @@ jobs:
         working-directory: server
         run: |
           npm run lint:harness
+          npm run lint:round2
           npm run test:fast
           npm run test:coverage
       - name: Install client dependencies deterministically

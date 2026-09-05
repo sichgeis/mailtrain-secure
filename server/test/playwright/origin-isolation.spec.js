@@ -160,7 +160,11 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     const dialogs = [];
     page.on('dialog', async dialog => {
         dialogs.push(dialog.message());
-        await dialog.dismiss();
+        if (dialog.type() === 'beforeunload') {
+            await dialog.accept();
+        } else {
+            await dialog.dismiss();
+        }
     });
 
     await page.goto(`${trustedOrigin}/login`);
@@ -223,6 +227,10 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     expect(capability.invalid.status).toBe(403);
     expect(capability.valid.status).toBe(200);
     const capabilityBase = `${sandboxOrigin}/${capability.valid.body}`;
+    const deniedUpload = await page.request.post(`${capabilityBase}/mosaico/upload/template/999999999`, {
+        multipart: {'files[]': {name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('synthetic rejected upload')}}
+    });
+    expect(deniedUpload.status()).toBe(403);
     for (const endpoint of ['account', 'access-token']) {
         // eslint-disable-next-line no-await-in-loop
         const response = await page.request.get(`${capabilityBase}/rest/${endpoint}`);
@@ -252,6 +260,23 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
     await expect(editor.locator('#checkbadbrowsersframe')).toHaveCount(0);
     expect(dialogs).not.toContain('Update your browser!');
 
+    // Campaign editing must get explicit scoped capabilities, not rely on an
+    // unsupported factory returning an unrestricted identity.
+    const campaign = await page.evaluate(async templateId => {
+        // eslint-disable-next-line no-undef
+        const response = await globalThis.fetch('/rest/campaigns', {
+            method: 'POST',
+            // eslint-disable-next-line no-undef
+            headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': globalThis.csrfToken},
+            body: JSON.stringify({name: 'Synthetic editor campaign', namespace: 1, type: 1, source: 3,
+                send_configuration: 1, lists: [{list: 1}], data: {sourceTemplate: templateId}})
+        });
+        return {status: response.status, id: await response.json()};
+    }, createdTemplate.id);
+    expect(campaign.status, JSON.stringify(campaign.id)).toBe(200);
+    await page.goto(`${trustedOrigin}/campaigns/${campaign.id}/content`);
+    await expect(page.frameLocator('iframe[src*="mosaico/editor"]').locator('a[href="#toolblocks"]')).toBeVisible({timeout: 30000});
+
     expect((await page.request.get(`${capabilityBase}/mosaico/templates/1/index.html`)).status()).toBe(200);
     const logoutStatus = await page.evaluate(async () => {
         // eslint-disable-next-line no-undef
@@ -267,6 +292,7 @@ test('database-backed Mosaico editor initializes inside the sandbox origin', asy
 });
 
 test('a real Mosaico image response persists across cache reconciliation', async ({request}) => {
+    test.setTimeout(60000); // Two intentional five-second cache writes plus reconciliation waits.
     const cacheType = 'mosaico-images';
     const params = '37,19';
     const sourceFilename = 'cache-persistence-fixture.png';

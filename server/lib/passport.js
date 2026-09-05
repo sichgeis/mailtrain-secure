@@ -17,7 +17,7 @@ const contextHelpers = require('./context-helpers');
 const {extractAccessToken} = require('./auth-security');
 const {loadExternalAuthAdapter} = require('./external-auth-adapter');
 const {getCasLogoutUrl, normalizeCasProfile} = require('./cas-auth');
-const {createIdentity, validIdentity} = require('./session-identity');
+const {createIdentity, validIdentity, sessionUser} = require('./session-identity');
 
 let authMode = 'local';
 
@@ -330,7 +330,9 @@ if (CasStrategy) {
                 const userId = await users.create(contextHelpers.getAdminContext(), {
                     username: profile[config.ldap.uidTag],
                     role: config.ldap.newUserRole,
-                    namespace: config.ldap.newUserNamespaceId
+                    namespace: config.ldap.newUserNamespaceId,
+                    name: profile[config.ldap.nameTag],
+                    email: profile[config.ldap.mailTag]
                 });
 
                 return {
@@ -358,20 +360,22 @@ if (CasStrategy) {
 
 }
 
-// Every authentication adapter stores only a versioned identity, never a stale role/profile.
+// Every adapter stores a versioned identity, never a stale authorization snapshot.
 passport.serializeUser((req, user, done) => {
     nodeifyPromise(users.getById(contextHelpers.getAdminContext(), user.id).then(current => {
         if (user.auth_version !== undefined && user.auth_version !== current.auth_version) {
             throw new interoperableErrors.PermissionDeniedError();
         }
-        return createIdentity(current, !!(req.body && req.body.remember));
+        const identity = createIdentity(current, !!(req.body && req.body.remember));
+        if (!module.exports.isAuthMethodLocal) identity.profile = {name: user.name, email: user.email};
+        return identity;
     }), done);
 });
 
 passport.deserializeUser((identity, done) => {
     if (!identity || !Number.isSafeInteger(identity.id)) return done(null, false);
     users.getById(contextHelpers.getAdminContext(), identity.id).then(user => {
-        done(null, validIdentity(identity, user) ? user : false);
+        done(null, validIdentity(identity, user) ? sessionUser(identity, user) : false);
     }).catch(err => {
         if (err instanceof interoperableErrors.PermissionDeniedError) return done(null, false);
         done(err);
