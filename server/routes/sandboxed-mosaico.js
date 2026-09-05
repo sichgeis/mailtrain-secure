@@ -36,6 +36,54 @@ const { fileCache } = require('../lib/file-cache');
 const {resolvePathWithinBase} = require('../lib/safe-path');
 const {sandboxContentSecurityPolicy} = require('../lib/browser-security');
 const {anonymousRestrictedAccessToken} = require('../../shared/urls');
+const {EventEmitter} = require('node:events');
+const {ImageWorkPool} = require('../lib/image-work-pool');
+const {createRateLimitMiddleware, getRateLimitStore} = require('../lib/rate-limit');
+const {digest} = require('../lib/request-rate-limiters');
+const imagePool = new ImageWorkPool(config.security.imageTransforms);
+const imageMissLimit = createRateLimitMiddleware({
+    store: {consume: (...args) => getRateLimitStore().consume(...args)},
+    policy: config.security.imageTransforms,
+    key: req => `image-miss:${digest(req.ip)}`
+});
+
+async function sendBoundedImage(req, res, key, createImage) {
+    const controller = new AbortController();
+    const disconnected = () => { if (!res.writableFinished) controller.abort(); };
+    res.once('close', disconnected);
+    try {
+        const image = await imagePool.run(key, async signal => {
+            const disposer = new EventEmitter();
+            const abort = () => disposer.emit('abort');
+            signal.addEventListener('abort', abort, {once: true});
+            try {
+                signal.throwIfAborted();
+                const result = await createImage(disposer, signal);
+                const chunks = [];
+                let bytes = 0;
+                for await (const chunk of result.stream) {
+                    signal.throwIfAborted();
+                    bytes += chunk.length;
+                    if (bytes > config.security.imageTransforms.maxOutputBytes) throw Object.assign(new Error('Image output exceeds limit'), {status: 413});
+                    chunks.push(chunk);
+                }
+                return {format: result.format, data: Buffer.concat(chunks)};
+            } finally {
+                signal.removeEventListener('abort', abort);
+                abort();
+            }
+        }, controller.signal);
+        if (!res.destroyed) {
+            res.set('Content-Type', 'image/' + image.format);
+            res.fileCacheResponse.end(image.data);
+        }
+    } catch (err) {
+        if (err.status === 429) res.set('Retry-After', '1');
+        if (!res.destroyed) throw err;
+    } finally {
+        res.removeListener('close', disconnected);
+    }
+}
 
 const legacyMosaicoUploadsDir = path.resolve(__dirname, '..', '..', 'client', 'static', 'mosaico', 'uploads');
 
@@ -44,8 +92,9 @@ const {editorCapability} = require('../lib/editor-capability');
 users.registerRestrictedAccessTokenMethod('mosaico', (params, context) => editorCapability('mosaico', params, context));
 
 
-async function placeholderImage(width, height, labelText, labelColor) {
-    const magick = gm(width, height, '#707070');
+async function placeholderImage(width, height, labelText, labelColor, disposer) {
+    const magick = gm(width, height, '#707070').options({timeout: config.security.imageTransforms.timeoutMs});
+    if (disposer) magick.addDisposer(disposer, ['abort']);
     const streamAsync = bluebird.promisify(magick.stream.bind(magick));
 
     const size = 40;
@@ -82,8 +131,9 @@ async function placeholderImage(width, height, labelText, labelColor) {
     };
 }
 
-async function resizedImage(filePath, method, width, height) {
-    const magick = gm(filePath);
+async function resizedImage(filePath, method, width, height, disposer) {
+    const magick = gm(filePath).options({timeout: config.security.imageTransforms.timeoutMs});
+    if (disposer) magick.addDisposer(disposer, ['abort']);
     const streamAsync = bluebird.promisify(magick.stream.bind(magick));
     const formatAsync = bluebird.promisify(magick.format.bind(magick));
 
@@ -153,14 +203,12 @@ async function getRouter(appType) {
         router.use('/templates/:mosaicoTemplateId/edres', express.static(path.join(__dirname, '..', '..', 'client', 'static', 'mosaico', 'templates', 'versafix-1', 'edres')));
 
         // This is the final fallback for a block thumbnail, so that at least something gets returned
-        router.getAsync('/templates/:mosaicoTemplateId/edres/:fileName', await fileCache('mosaico-block-thumbnails', config.mosaico.fileCache.blockThumbnails, req => req.params.fileName), async (req, res) => {
+        router.getAsync('/templates/:mosaicoTemplateId/edres/:fileName', await fileCache('mosaico-block-thumbnails', config.mosaico.fileCache.blockThumbnails, req => req.params.fileName), imageMissLimit, async (req, res) => {
             let labelText = req.params.fileName.replace(/\.png$/, '');
             labelText = labelText.replace(/[_]/g, ' ');
             labelText = capitalize.words(labelText);
 
-            const image = await placeholderImage(340, 100, labelText, '#ffffff');
-            res.set('Content-Type', 'image/' + image.format);
-            image.stream.pipe(res.fileCacheResponse);
+            await sendBoundedImage(req, res, `thumbnail:${req.params.fileName}`, disposer => placeholderImage(340, 100, labelText.slice(0, 100), '#ffffff', disposer));
         });
 
         fileHelpers.installUploadHandler(router, '/upload/:type/:entityId', files.ReplacementBehavior.RENAME, null, 'file', resp => {
@@ -245,21 +293,27 @@ async function getRouter(appType) {
         };
 
 
-        router.getAsync('/img', await fileCache('mosaico-images', config.mosaico.fileCache.images, imgCacheFileName), async (req, res) => {
+        const normalizeImageRequest = (req, res, next) => {
+            const {method, params, src} = req.query;
+            if (!['placeholder', 'resize', 'cover'].includes(method) || typeof params !== 'string' || params.length > 100 ||
+                (src !== undefined && (typeof src !== 'string' || src.length > 2048))) {
+                return res.status(400).json({message: 'Invalid image parameters'});
+            }
+            const dimensions = params.split(',');
+            if (dimensions.length !== 2) return res.status(400).json({message: 'Invalid image dimensions'});
+            req.query.params = [sanitizeSize(dimensions[0], 1, 2048, 600, method !== 'placeholder'),
+                sanitizeSize(dimensions[1], 1, 2048, 300, method !== 'placeholder')].map(String).join(',');
+            next();
+        };
+        router.getAsync('/img', normalizeImageRequest, await fileCache('mosaico-images', config.mosaico.fileCache.images, imgCacheFileName), imageMissLimit, async (req, res) => {
             const method = req.query.method;
             const params = req.query.params;
             let [width, height] = params.split(',');
-            let image;
-
-
+            await sendBoundedImage(req, res, `image:${imgCacheFileName(req)}`, async (disposer, signal) => {
             if (method === 'placeholder') {
                 width = sanitizeSize(width, 1, 2048, 600, false);
                 height = sanitizeSize(height, 1, 2048, 300, false);
-                try {
-                    image = await placeholderImage(width, height);
-                } catch (err) {
-                    console.log(err);
-                }
+                return await placeholderImage(width, height, null, null, disposer);
 
             } else {
                 width = sanitizeSize(width, 1, 2048, 600, true);
@@ -276,11 +330,10 @@ async function getRouter(appType) {
                     filePath = file.path;
                 }
 
-                image = await resizedImage(filePath, method, width, height);
+                signal.throwIfAborted();
+                return await resizedImage(filePath, method, width, height, disposer);
             }
-
-            res.set('Content-Type', 'image/' + image.format);
-            image.stream.pipe(res.fileCacheResponse);
+            });
         });
     }
 

@@ -246,6 +246,13 @@ reports:
   unsafeJavaScriptExecution: false
 
 security:
+  imageTransforms:
+    concurrency: 2
+    maxQueued: 20
+    timeoutMs: 30000
+    maxOutputBytes: 8388608
+    limit: 120
+    windowMs: 60000
   uploads:
     maxFileSizeBytes: 16777216
     maxTotalBytes: 16777216

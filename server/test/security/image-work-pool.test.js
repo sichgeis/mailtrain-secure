@@ -1,4 +1,5 @@
 'use strict';
+/* global AbortController */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {ImageWorkPool} = require('../../lib/image-work-pool');
