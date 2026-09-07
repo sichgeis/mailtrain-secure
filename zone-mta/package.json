@@ -18,7 +18,7 @@
     "dependencies": {
         "@zone-eu/zone-mta": "3.10.18",
         "libmime": "5.4.2",
-        "nodemailer": "9.0.6",
+        "nodemailer": "9.1.1",
         "zonemta-delivery-counters": "1.0.1",
         "zonemta-limiter": "1.0.0",
         "zonemta-loop-breaker": "1.0.2"
@@ -27,7 +27,7 @@
         "toml": "4.2.0",
         "qs": "6.16.0",
         "async": "3.2.6",
-        "nodemailer": "9.0.6",
+        "nodemailer": "9.1.1",
         "@zone-eu/zone-mta": {
             "js-yaml": "5.4.1",
             "mailauth": "5.0.2",
