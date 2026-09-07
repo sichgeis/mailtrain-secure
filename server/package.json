@@ -67,7 +67,7 @@
     "csv-parse": "^4.8.3",
     "csv-stringify": "^5.3.6",
     "escape-html": "^1.0.3",
-    "escape-string-regexp": "^1.0.5",
+    "escape-string-regexp": "^5.0.0",
     "express": "4.22.2",
     "express-locale": "^1.0.5",
     "express-session": "1.19.0",
