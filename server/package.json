@@ -96,7 +96,7 @@
     "moment": "2.30.1",
     "moment-timezone": "0.5.48",
     "morgan": "1.12.0",
-    "multer": "2.3.0",
+    "multer": "2.4.0",
     "mysql2": "3.24.2",
     "nanoid": "3.3.18",
     "node-ipc": "^9.1.1",
