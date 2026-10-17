@@ -57,7 +57,7 @@
     "body-parser": "1.20.6",
     "bounce-handler": "7.3.2-fork.3",
     "capitalize": "^2.0.1",
-    "compression": "1.8.1",
+    "compression": "1.8.2",
     "config": "5.0.1",
     "connect-flash": "^0.1.1",
     "connect-redis": "^3.4.2",
