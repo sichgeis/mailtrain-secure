@@ -54,7 +54,7 @@
     "@xmldom/xmldom": "0.9.12",
     "bcryptjs": "3.0.3",
     "bluebird": "^3.7.2",
-    "body-parser": "1.20.6",
+    "body-parser": "2.3.0",
     "bounce-handler": "7.3.2-fork.3",
     "capitalize": "^2.0.1",
     "compression": "1.8.1",
